@@ -1,0 +1,31 @@
+# Archivo de servicio systemd para MEMOR.IA en subpath
+# Ubicación: /etc/systemd/system/memor-ia.service
+
+[Unit]
+Description=MEMOR.IA Streamlit App - Generador de Memorias Técnicas
+After=network.target
+
+[Service]
+Type=simple
+User=memoria
+Group=memoria
+WorkingDirectory=/home/memoria/app
+Environment=PATH=/home/memoria/app/venv/bin
+Environment=STREAMLIT_SERVER_BASE_URL_PATH=/memor-ia
+ExecStart=/home/memoria/app/venv/bin/streamlit run memoria_tecnica_pro_v2.py --server.port=8501 --server.address=127.0.0.1 --server.headless=true --server.baseUrlPath=/memor-ia
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+# Limits de seguridad
+MemoryMax=2G
+MemoryHigh=1.5G
+LimitNOFILE=65536
+
+# Configuración de red
+PrivateNetwork=false
+BindReadOnlyPaths=/etc/resolv.conf
+
+[Install]
+WantedBy=multi-user.target
