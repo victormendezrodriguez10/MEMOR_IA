@@ -38,6 +38,17 @@ import secrets
 import string
 from datetime import datetime, timedelta
 
+# Imports para PostgreSQL y Cloudinary
+from db_helper import init_db_pool
+from db_functions import (
+    registrar_usuario, obtener_perfil_empresa, guardar_perfil_empresa,
+    guardar_logo_usuario, guardar_documentos_anexos,
+    generar_token_recuperacion, validar_token_recuperacion, cambiar_password,
+    verificar_usuario, obtener_usuario, listar_usuarios, actualizar_usuario,
+    registrar_pago
+)
+from storage_helper import init_cloudinary
+
 # Cargar variables de entorno
 load_dotenv()
 
@@ -269,93 +280,36 @@ def validar_iban(iban):
 # ============ SISTEMA DE AUTENTICACIÓN Y BASE DE DATOS ============
 
 def init_database():
-    """Inicializa la base de datos SQLite"""
-    conn = sqlite3.connect('memoria_usuarios.db')
-    cursor = conn.cursor()
+    """Inicializa la base de datos PostgreSQL"""
+    try:
+        init_db_pool()
+        init_cloudinary()
 
-    # Tabla de usuarios
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS usuarios (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            email TEXT UNIQUE NOT NULL,
-            password TEXT NOT NULL,
-            nombre TEXT NOT NULL,
-            empresa TEXT NOT NULL,
-            telefono TEXT,
-            cif TEXT,
-            direccion TEXT,
-            numero_cuenta TEXT,
-            rol TEXT DEFAULT 'Usuario',
-            fecha_registro DATETIME DEFAULT CURRENT_TIMESTAMP,
-            activo BOOLEAN DEFAULT 1,
-            plan TEXT DEFAULT 'basico',
-            fecha_expiracion DATE
-        )
-    ''')
+        # Crear usuarios por defecto si no existen
+        from db_helper import get_db_connection
+        with get_db_connection() as conn:
+            with conn.cursor() as cursor:
+                # Usuario administrador por defecto
+                cursor.execute('''
+                    INSERT INTO usuarios
+                    (email, password, nombre, empresa, rol, activo)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (email) DO NOTHING
+                ''', ("vmendez@oclem.com", hashlib.sha256("favorito1998".encode()).hexdigest(),
+                      "Víctor Méndez", "OCLEM", "Administrador", True))
 
-    # Tabla de perfiles de empresa (datos que se reutilizan en memorias)
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS perfiles_empresa (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            usuario_id INTEGER UNIQUE,
-            sector TEXT,
-            empleados TEXT,
-            experiencia_anos TEXT,
-            certificaciones TEXT,  -- JSON con array de certificaciones
-            otras_certificaciones TEXT,
-            experiencia_similar TEXT,
-            logo_path TEXT,
-            medios_materiales TEXT,
-            herramientas_software TEXT,
-            equipo_tecnico TEXT,  -- JSON con array de técnicos
-            fecha_actualizacion DATETIME DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (usuario_id) REFERENCES usuarios (id)
-        )
-    ''')
+                # Usuario demo
+                cursor.execute('''
+                    INSERT INTO usuarios
+                    (email, password, nombre, empresa, rol, activo)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (email) DO NOTHING
+                ''', ("demo@demo.com", hashlib.sha256("demo123".encode()).hexdigest(),
+                      "Usuario Demo", "Empresa Demo", "Usuario", True))
 
-    # Tabla de pagos
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS pagos (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            usuario_id INTEGER,
-            stripe_payment_id TEXT,
-            importe REAL,
-            fecha_pago DATETIME DEFAULT CURRENT_TIMESTAMP,
-            estado TEXT DEFAULT 'pendiente',
-            plan TEXT,
-            FOREIGN KEY (usuario_id) REFERENCES usuarios (id)
-        )
-    ''')
-
-    # Tabla de tokens de recuperación
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS tokens_recuperacion (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            email TEXT NOT NULL,
-            token TEXT NOT NULL,
-            fecha_creacion DATETIME DEFAULT CURRENT_TIMESTAMP,
-            usado BOOLEAN DEFAULT 0
-        )
-    ''')
-
-    # Usuario administrador por defecto
-    cursor.execute('''
-        INSERT OR IGNORE INTO usuarios
-        (email, password, nombre, empresa, rol, activo)
-        VALUES (?, ?, ?, ?, ?, ?)
-    ''', ("vmendez@oclem.com", hashlib.sha256("favorito1998".encode()).hexdigest(),
-          "Víctor Méndez", "OCLEM", "Administrador", 1))
-
-    # Usuario demo
-    cursor.execute('''
-        INSERT OR IGNORE INTO usuarios
-        (email, password, nombre, empresa, rol, activo)
-        VALUES (?, ?, ?, ?, ?, ?)
-    ''', ("demo@demo.com", hashlib.sha256("demo123".encode()).hexdigest(),
-          "Usuario Demo", "Empresa Demo", "Usuario", 1))
-
-    conn.commit()
-    conn.close()
+                conn.commit()
+    except Exception as e:
+        st.error(f"❌ Error al inicializar: {e}")
 
 def generar_password():
     """Genera una contraseña aleatoria"""
@@ -400,297 +354,31 @@ def enviar_email(destinatario, asunto, mensaje_html):
 
 def verificar_credenciales(email, password):
     """Verifica las credenciales del usuario"""
-    conn = sqlite3.connect('memoria_usuarios.db')
-    cursor = conn.cursor()
-
-    password_hash = hashlib.sha256(password.encode()).hexdigest()
-
-    # Debug: verificar si el usuario existe
-    cursor.execute('SELECT email, activo FROM usuarios WHERE email = ?', (email,))
-    usuario_existe = cursor.fetchone()
-
-    if not usuario_existe:
-        print(f"DEBUG: Usuario {email} no encontrado en la base de datos")
-        conn.close()
-        return False, None
-
-    if not usuario_existe[1]:
-        print(f"DEBUG: Usuario {email} existe pero está inactivo")
-        conn.close()
-        return False, None
-
-    cursor.execute('''
-        SELECT nombre, empresa, rol, activo FROM usuarios
-        WHERE email = ? AND password = ?
-    ''', (email, password_hash))
-
-    resultado = cursor.fetchone()
-    conn.close()
-
-    if resultado and resultado[3]:  # activo = 1
-        print(f"DEBUG: Login exitoso para {email}")
-        return True, {
-            "nombre": resultado[0],
-            "empresa": resultado[1],
-            "rol": resultado[2]
-        }
+    if verificar_usuario(email, password):
+        usuario = obtener_usuario(email)
+        if usuario and usuario['activo']:
+            print(f"DEBUG: Login exitoso para {email}")
+            return True, {
+                "nombre": usuario['nombre'],
+                "empresa": usuario['empresa'],
+                "rol": usuario['rol']
+            }
 
     print(f"DEBUG: Credenciales incorrectas para {email}")
     return False, None
 
-def registrar_usuario(datos_usuario):
-    """Registra un nuevo usuario en la base de datos"""
-    conn = sqlite3.connect('memoria_usuarios.db')
-    cursor = conn.cursor()
 
-    password = generar_password()
-    password_hash = hashlib.sha256(password.encode()).hexdigest()
-
-    try:
-        cursor.execute('''
-            INSERT INTO usuarios
-            (email, password, nombre, empresa, telefono, cif, direccion, numero_cuenta, plan, fecha_expiracion)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (datos_usuario['email'], password_hash, datos_usuario['nombre'],
-              datos_usuario['empresa'], datos_usuario['telefono'], datos_usuario['cif'],
-              datos_usuario['direccion'], datos_usuario.get('numero_cuenta', ''), 'basico',
-              (datetime.now() + timedelta(days=30)).date()))
-
-        conn.commit()
-        conn.close()
-        return password
-    except sqlite3.IntegrityError:
-        conn.close()
-        return None
-
-# La base de datos se inicializa en main()
-
-def obtener_perfil_empresa(usuario_email):
-    """Obtiene el perfil de empresa de un usuario"""
-    conn = sqlite3.connect('memoria_usuarios.db')
-    cursor = conn.cursor()
-
-    cursor.execute('''
-        SELECT pe.* FROM perfiles_empresa pe
-        JOIN usuarios u ON pe.usuario_id = u.id
-        WHERE u.email = ?
-    ''', (usuario_email,))
-
-    resultado = cursor.fetchone()
-    conn.close()
-
-    if resultado:
-        return {
-            'sector': resultado[2],
-            'empleados': resultado[3],
-            'experiencia_anos': resultado[4],
-            'certificaciones': json.loads(resultado[5]) if resultado[5] else [],
-            'otras_certificaciones': resultado[6],
-            'experiencia_similar': resultado[7],
-            'logo_path': resultado[8],
-            'medios_materiales': resultado[9],
-            'herramientas_software': resultado[10],
-            'equipo_tecnico': json.loads(resultado[11]) if resultado[11] else [],
-            'fecha_actualizacion': resultado[12]
-        }
-    return None
-
-def guardar_perfil_empresa(usuario_email, datos_perfil):
-    """Guarda o actualiza el perfil de empresa de un usuario"""
-    conn = sqlite3.connect('memoria_usuarios.db')
-    cursor = conn.cursor()
-
-    # Obtener ID del usuario
-    cursor.execute('SELECT id FROM usuarios WHERE email = ?', (usuario_email,))
-    usuario_result = cursor.fetchone()
-
-    if not usuario_result:
-        conn.close()
-        return False
-
-    usuario_id = usuario_result[0]
-
-    # Verificar si ya existe un perfil
-    cursor.execute('SELECT id FROM perfiles_empresa WHERE usuario_id = ?', (usuario_id,))
-    existe = cursor.fetchone()
-
-    # Preparar datos JSON
-    certificaciones_json = json.dumps(datos_perfil.get('certificaciones', []))
-    equipo_tecnico_json = json.dumps(datos_perfil.get('equipo_tecnico', []))
-
-    if existe:
-        # Actualizar perfil existente
-        cursor.execute('''
-            UPDATE perfiles_empresa SET
-                sector = ?, empleados = ?, experiencia_anos = ?,
-                certificaciones = ?, otras_certificaciones = ?,
-                experiencia_similar = ?, logo_path = ?,
-                medios_materiales = ?, herramientas_software = ?,
-                equipo_tecnico = ?, fecha_actualizacion = CURRENT_TIMESTAMP
-            WHERE usuario_id = ?
-        ''', (
-            datos_perfil.get('sector', ''),
-            datos_perfil.get('empleados', ''),
-            datos_perfil.get('experiencia_anos', ''),
-            certificaciones_json,
-            datos_perfil.get('otras_certificaciones', ''),
-            datos_perfil.get('experiencia_similar', ''),
-            datos_perfil.get('logo_path', ''),
-            datos_perfil.get('medios_materiales', ''),
-            datos_perfil.get('herramientas_software', ''),
-            equipo_tecnico_json,
-            usuario_id
-        ))
-    else:
-        # Crear nuevo perfil
-        cursor.execute('''
-            INSERT INTO perfiles_empresa
-            (usuario_id, sector, empleados, experiencia_anos,
-             certificaciones, otras_certificaciones, experiencia_similar,
-             logo_path, medios_materiales, herramientas_software, equipo_tecnico)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (
-            usuario_id,
-            datos_perfil.get('sector', ''),
-            datos_perfil.get('empleados', ''),
-            datos_perfil.get('experiencia_anos', ''),
-            certificaciones_json,
-            datos_perfil.get('otras_certificaciones', ''),
-            datos_perfil.get('experiencia_similar', ''),
-            datos_perfil.get('logo_path', ''),
-            datos_perfil.get('medios_materiales', ''),
-            datos_perfil.get('herramientas_software', ''),
-            equipo_tecnico_json
-        ))
-
-    conn.commit()
-    conn.close()
-    return True
-
-def guardar_logo_usuario(usuario_email, logo_file):
-    """Guarda el logo de un usuario específico"""
-    import os
-
-    # Crear directorio para logos si no existe (usar directorio actual en lugar de hardcoded)
-    logos_dir = "/Users/macintosh/Desktop/memoria copia/logos_usuarios"
-    if not os.path.exists(logos_dir):
-        os.makedirs(logos_dir)
-
-    # Generar nombre único para el logo
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    usuario_safe = usuario_email.replace("@", "_").replace(".", "_")
-    extension = logo_file.name.split('.')[-1]
-    logo_filename = f"logo_{usuario_safe}_{timestamp}.{extension}"
-    logo_path = os.path.join(logos_dir, logo_filename)
-
-    # Guardar archivo
-    try:
-        with open(logo_path, "wb") as f:
-            f.write(logo_file.getbuffer())
-        print(f"Logo guardado en: {logo_path}")  # Debug
-        return logo_path
-    except Exception as e:
-        print(f"Error guardando logo: {e}")  # Debug
-        return None
-
-def guardar_documentos_anexos(usuario_email, archivos_subidos, categoria):
-    """Guarda los documentos anexos de un usuario específico"""
-    import os
-    from datetime import datetime
-
-    if not archivos_subidos:
-        return []
-
-    # Crear directorio para documentos si no existe
-    docs_dir = "/Users/macintosh/Desktop/memoria copia/documentos_usuarios"
-    usuario_dir = os.path.join(docs_dir, usuario_email.replace("@", "_").replace(".", "_"))
-
-    if not os.path.exists(usuario_dir):
-        os.makedirs(usuario_dir)
-
-    documentos_guardados = []
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-
-    for i, archivo in enumerate(archivos_subidos):
-        # Generar nombre único para el documento
-        extension = archivo.name.split('.')[-1]
-        nombre_base = archivo.name.replace(f".{extension}", "")
-        doc_filename = f"{nombre_base}_{timestamp}_{i}.{extension}"
-        doc_path = os.path.join(usuario_dir, doc_filename)
-
-        # Guardar archivo
-        try:
-            with open(doc_path, "wb") as f:
-                f.write(archivo.getbuffer())
-
-            # Añadir información del documento
-            documentos_guardados.append({
-                'nombre': archivo.name,
-                'categoria': categoria,
-                'ruta_archivo': doc_path,
-                'fecha_subida': datetime.now().strftime("%d/%m/%Y %H:%M"),
-                'tamaño': len(archivo.getbuffer())
-            })
-        except Exception as e:
-            st.error(f"Error guardando {archivo.name}: {str(e)}")
-
-    return documentos_guardados
-
-def generar_token_recuperacion(email):
-    """Genera un token para recuperación de contraseña"""
-    token = secrets.token_urlsafe(32)
-
-    conn = sqlite3.connect('memoria_usuarios.db')
-    cursor = conn.cursor()
-
-    cursor.execute('''
-        INSERT INTO tokens_recuperacion (email, token)
-        VALUES (?, ?)
-    ''', (email, token))
-
-    conn.commit()
-    conn.close()
-    return token
-
-def validar_token_recuperacion(email, token):
-    """Valida un token de recuperación"""
-    conn = sqlite3.connect('memoria_usuarios.db')
-    cursor = conn.cursor()
-
-    cursor.execute('''
-        SELECT id FROM tokens_recuperacion
-        WHERE email = ? AND token = ? AND usado = 0
-        AND datetime(fecha_creacion) > datetime('now', '-1 hour')
-    ''', (email, token))
-
-    resultado = cursor.fetchone()
-    conn.close()
-
-    return resultado is not None
-
-def cambiar_password(email, nueva_password, token):
-    """Cambia la contraseña usando un token válido"""
-    if not validar_token_recuperacion(email, token):
-        return False
-
-    conn = sqlite3.connect('memoria_usuarios.db')
-    cursor = conn.cursor()
-
-    password_hash = hashlib.sha256(nueva_password.encode()).hexdigest()
-
-    # Actualizar contraseña
-    cursor.execute('''
-        UPDATE usuarios SET password = ? WHERE email = ?
-    ''', (password_hash, email))
-
-    # Marcar token como usado
-    cursor.execute('''
-        UPDATE tokens_recuperacion SET usado = 1 WHERE email = ? AND token = ?
-    ''', (email, token))
-
-    conn.commit()
-    conn.close()
-    return True
+# ============ FUNCIONES DE BASE DE DATOS ============
+# Las siguientes funciones están en db_functions.py y se importan automáticamente:
+# - registrar_usuario
+# - obtener_perfil_empresa
+# - guardar_perfil_empresa
+# - guardar_logo_usuario
+# - guardar_documentos_anexos
+# - generar_token_recuperacion
+# - validar_token_recuperacion
+# - cambiar_password
+# ====================================================
 
 def mostrar_recuperacion():
     """Página de recuperación de contraseña"""
@@ -722,13 +410,9 @@ def mostrar_recuperacion():
 
                 if enviar_token and email_recovery:
                     # Verificar que el email existe
-                    conn = sqlite3.connect('memoria_usuarios.db')
-                    cursor = conn.cursor()
-                    cursor.execute("SELECT id FROM usuarios WHERE email = ?", (email_recovery,))
-                    existe = cursor.fetchone()
-                    conn.close()
+                    usuario = obtener_usuario(email_recovery)
 
-                    if existe:
+                    if usuario:
                         token = generar_token_recuperacion(email_recovery)
 
                         mensaje_html = f"""
@@ -781,7 +465,7 @@ def mostrar_recuperacion():
                         st.error("❌ La contraseña debe tener al menos 6 caracteres")
                     else:
                         # Buscar token completo
-                        conn = sqlite3.connect('memoria_usuarios.db')
+                        # MIGRADO A POSTGRESQL - usar get_db_connection() o funciones de db_functions.py
                         cursor = conn.cursor()
                         cursor.execute('''
                             SELECT token FROM tokens_recuperacion
@@ -2622,7 +2306,7 @@ def mostrar_aplicacion_admin():
         st.markdown('<h2 class="section-header">Gestión de Usuarios Registrados</h2>', unsafe_allow_html=True)
 
         # Obtener todos los usuarios
-        conn = sqlite3.connect('memoria_usuarios.db')
+        # MIGRADO A POSTGRESQL - usar get_db_connection() o funciones de db_functions.py
         df_usuarios = pd.read_sql_query('''
             SELECT id, email, nombre, empresa, telefono, cif, numero_cuenta, rol,
                    fecha_registro, activo, plan, fecha_expiracion
@@ -2701,7 +2385,7 @@ def mostrar_aplicacion_admin():
                         nuevo_estado = not row['activo']
                         if st.button(f"{'Desactivar' if row['activo'] else 'Activar'}",
                                    key=f"toggle_{row['id']}"):
-                            conn = sqlite3.connect('memoria_usuarios.db')
+                            # MIGRADO A POSTGRESQL - usar get_db_connection() o funciones de db_functions.py
                             cursor = conn.cursor()
                             cursor.execute('''
                                 UPDATE usuarios SET activo = ? WHERE id = ?
@@ -2717,7 +2401,7 @@ def mostrar_aplicacion_admin():
                             nueva_pass = generar_password()
                             password_hash = hashlib.sha256(nueva_pass.encode()).hexdigest()
 
-                            conn = sqlite3.connect('memoria_usuarios.db')
+                            # MIGRADO A POSTGRESQL - usar get_db_connection() o funciones de db_functions.py
                             cursor = conn.cursor()
                             cursor.execute('''
                                 UPDATE usuarios SET password = ? WHERE id = ?
@@ -2751,7 +2435,7 @@ def mostrar_aplicacion_admin():
                     with col_a3:
                         if st.button("🗑️ Eliminar", key=f"delete_{row['id']}"):
                             if st.session_state.get(f'confirm_delete_{row["id"]}', False):
-                                conn = sqlite3.connect('memoria_usuarios.db')
+                                # MIGRADO A POSTGRESQL - usar get_db_connection() o funciones de db_functions.py
                                 cursor = conn.cursor()
                                 cursor.execute('DELETE FROM usuarios WHERE id = ?', (row['id'],))
                                 cursor.execute('DELETE FROM pagos WHERE usuario_id = ?', (row['id'],))
@@ -2769,7 +2453,7 @@ def mostrar_aplicacion_admin():
         st.markdown('<h2 class="section-header">Control de Pagos y Facturación</h2>', unsafe_allow_html=True)
 
         # Obtener pagos
-        conn = sqlite3.connect('memoria_usuarios.db')
+        # MIGRADO A POSTGRESQL - usar get_db_connection() o funciones de db_functions.py
         df_pagos = pd.read_sql_query('''
             SELECT p.*, u.nombre, u.email, u.empresa
             FROM pagos p
@@ -2816,7 +2500,7 @@ def mostrar_aplicacion_admin():
                     # Opciones de gestión de pagos
                     if row['estado'] == 'pendiente':
                         if st.button("Marcar como Pagado", key=f"mark_paid_{row['id']}"):
-                            conn = sqlite3.connect('memoria_usuarios.db')
+                            # MIGRADO A POSTGRESQL - usar get_db_connection() o funciones de db_functions.py
                             cursor = conn.cursor()
                             cursor.execute('''
                                 UPDATE pagos SET estado = 'completado' WHERE id = ?
@@ -3451,7 +3135,7 @@ def mostrar_aplicacion():
         
         # Validación - Necesitamos definir las variables aquí ya que no están en el scope de tab5
         # Obtener datos del usuario logueado desde la base de datos
-        conn = sqlite3.connect('memoria_usuarios.db')
+        # MIGRADO A POSTGRESQL - usar get_db_connection() o funciones de db_functions.py
         cursor = conn.cursor()
         cursor.execute('SELECT empresa, cif FROM usuarios WHERE email = ?', (st.session_state.user_email,))
         datos_usuario = cursor.fetchone()
@@ -3539,7 +3223,7 @@ def mostrar_aplicacion():
                     st.stop()
 
                 # Obtener datos de usuario básicos
-                conn = sqlite3.connect('memoria_usuarios.db')
+                # MIGRADO A POSTGRESQL - usar get_db_connection() o funciones de db_functions.py
                 cursor = conn.cursor()
                 cursor.execute('SELECT nombre, empresa, cif FROM usuarios WHERE email = ?',
                              (st.session_state.user_email,))
