@@ -15,6 +15,10 @@ from docx.enum.style import WD_STYLE_TYPE
 from docx.oxml.ns import qn, nsdecls
 from docx.oxml import OxmlElement, parse_xml
 from docx.opc.constants import RELATIONSHIP_TYPE as RT
+from pptx import Presentation
+from pptx.util import Inches as PptxInches, Pt as PptxPt
+from pptx.enum.text import PP_ALIGN
+from pptx.dml.color import RGBColor as PptxRGBColor
 import pandas as pd
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
@@ -2102,6 +2106,284 @@ def agregar_numeracion_paginas(doc):
     except Exception as e:
         print(f"Error añadiendo numeración de páginas: {e}")
 
+def generar_presentacion_pptx(datos_memoria, datos_proyecto, datos_empresa, criterios, df_cronograma=None):
+    """
+    Genera una presentación PowerPoint visual basada en la memoria técnica generada
+
+    Args:
+        datos_memoria: Diccionario con las secciones generadas de la memoria
+        datos_proyecto: Datos del proyecto
+        datos_empresa: Datos de la empresa
+        criterios: Lista de criterios de valoración
+        df_cronograma: DataFrame del cronograma (opcional)
+
+    Returns:
+        Presentation: Objeto de presentación de python-pptx
+    """
+    try:
+        prs = Presentation()
+        prs.slide_width = PptxInches(10)
+        prs.slide_height = PptxInches(7.5)
+
+        # ===== SLIDE 1: PORTADA =====
+        slide_portada = prs.slides.add_slide(prs.slide_layouts[6])  # Layout en blanco
+
+        # Fondo azul
+        background = slide_portada.background
+        fill = background.fill
+        fill.solid()
+        fill.fore_color.rgb = PptxRGBColor(30, 58, 138)
+
+        # Título principal
+        txBox = slide_portada.shapes.add_textbox(PptxInches(0.5), PptxInches(2.5), PptxInches(9), PptxInches(1))
+        tf = txBox.text_frame
+        tf.text = "MEMORIA TÉCNICA"
+        p = tf.paragraphs[0]
+        p.alignment = PP_ALIGN.CENTER
+        p.font.size = PptxPt(54)
+        p.font.bold = True
+        p.font.color.rgb = PptxRGBColor(255, 255, 255)
+
+        # Objeto del proyecto
+        txBox2 = slide_portada.shapes.add_textbox(PptxInches(0.5), PptxInches(3.8), PptxInches(9), PptxInches(1.5))
+        tf2 = txBox2.text_frame
+        tf2.text = datos_proyecto.get('objeto', '')
+        tf2.word_wrap = True
+        p2 = tf2.paragraphs[0]
+        p2.alignment = PP_ALIGN.CENTER
+        p2.font.size = PptxPt(24)
+        p2.font.color.rgb = PptxRGBColor(255, 255, 255)
+
+        # Empresa
+        txBox3 = slide_portada.shapes.add_textbox(PptxInches(0.5), PptxInches(5.8), PptxInches(9), PptxInches(0.8))
+        tf3 = txBox3.text_frame
+        tf3.text = datos_empresa.get('razon_social', '')
+        p3 = tf3.paragraphs[0]
+        p3.alignment = PP_ALIGN.CENTER
+        p3.font.size = PptxPt(28)
+        p3.font.bold = True
+        p3.font.color.rgb = PptxRGBColor(245, 158, 11)
+
+        # ===== SLIDE 2: ÍNDICE =====
+        slide_indice = prs.slides.add_slide(prs.slide_layouts[1])  # Layout título y contenido
+        title = slide_indice.shapes.title
+        title.text = "ÍNDICE"
+        title.text_frame.paragraphs[0].font.size = PptxPt(44)
+        title.text_frame.paragraphs[0].font.bold = True
+        title.text_frame.paragraphs[0].font.color.rgb = PptxRGBColor(30, 58, 138)
+
+        # Contenido del índice
+        txBox = slide_indice.shapes.add_textbox(PptxInches(1), PptxInches(2), PptxInches(8), PptxInches(4.5))
+        tf = txBox.text_frame
+
+        items_indice = [
+            "1. Presentación de la Empresa",
+            "2. Datos del Proyecto"
+        ]
+        for i, criterio in enumerate(criterios, 3):
+            items_indice.append(f"{i}. {criterio.get('nombre', '')}")
+
+        if df_cronograma is not None:
+            items_indice.append(f"{len(items_indice) + 1}. Cronograma de Ejecución")
+
+        for item in items_indice:
+            p = tf.add_paragraph()
+            p.text = item
+            p.font.size = PptxPt(20)
+            p.space_before = PptxPt(12)
+            p.level = 0
+
+        # ===== SLIDE 3: PRESENTACIÓN EMPRESA =====
+        slide_empresa = prs.slides.add_slide(prs.slide_layouts[1])
+        title = slide_empresa.shapes.title
+        title.text = "PRESENTACIÓN DE LA EMPRESA"
+        title.text_frame.paragraphs[0].font.size = PptxPt(40)
+        title.text_frame.paragraphs[0].font.bold = True
+        title.text_frame.paragraphs[0].font.color.rgb = PptxRGBColor(30, 58, 138)
+
+        # Contenido empresa
+        txBox = slide_empresa.shapes.add_textbox(PptxInches(1), PptxInches(2), PptxInches(8), PptxInches(4.5))
+        tf = txBox.text_frame
+
+        datos_empresa_lista = [
+            f"🏢 {datos_empresa.get('razon_social', '')}",
+            f"📄 CIF: {datos_empresa.get('cif', '')}",
+            f"📍 {datos_empresa.get('direccion', '')}",
+            f"📧 {datos_empresa.get('email', '')}",
+            f"📞 {datos_empresa.get('telefono', '')}",
+        ]
+
+        if datos_empresa.get('certificaciones'):
+            datos_empresa_lista.append(f"✅ Certificaciones: {datos_empresa.get('certificaciones', '')}")
+
+        for dato in datos_empresa_lista:
+            p = tf.add_paragraph()
+            p.text = dato
+            p.font.size = PptxPt(18)
+            p.space_before = PptxPt(10)
+
+        # ===== SLIDE 4: DATOS DEL PROYECTO =====
+        slide_proyecto = prs.slides.add_slide(prs.slide_layouts[1])
+        title = slide_proyecto.shapes.title
+        title.text = "DATOS DEL PROYECTO"
+        title.text_frame.paragraphs[0].font.size = PptxPt(40)
+        title.text_frame.paragraphs[0].font.bold = True
+        title.text_frame.paragraphs[0].font.color.rgb = PptxRGBColor(30, 58, 138)
+
+        # Contenido proyecto
+        txBox = slide_proyecto.shapes.add_textbox(PptxInches(1), PptxInches(2), PptxInches(8), PptxInches(4.5))
+        tf = txBox.text_frame
+
+        datos_proyecto_lista = [
+            f"📋 Expediente: {datos_proyecto.get('expediente', '')}",
+            f"🏢 Organismo: {datos_proyecto.get('organismo', '')}",
+            f"💰 Presupuesto: {datos_proyecto.get('presupuesto', '')} €",
+            f"📅 Plazo: {datos_proyecto.get('plazo', '')}",
+            f"📝 Tipo: {datos_proyecto.get('tipo_contrato', 'Obras')}",
+        ]
+
+        for dato in datos_proyecto_lista:
+            p = tf.add_paragraph()
+            p.text = dato
+            p.font.size = PptxPt(20)
+            p.space_before = PptxPt(12)
+
+        # Objeto en caja destacada
+        txBox2 = slide_proyecto.shapes.add_textbox(PptxInches(1), PptxInches(5.2), PptxInches(8), PptxInches(1.5))
+        tf2 = txBox2.text_frame
+        tf2.text = f"Objeto: {datos_proyecto.get('objeto', '')}"
+        tf2.word_wrap = True
+        p = tf2.paragraphs[0]
+        p.font.size = PptxPt(16)
+        p.font.italic = True
+
+        # ===== SLIDES DE CRITERIOS =====
+        for criterio in criterios:
+            slide_criterio = prs.slides.add_slide(prs.slide_layouts[1])
+            title = slide_criterio.shapes.title
+            nombre_criterio = criterio.get('nombre', '')
+            puntos_criterio = criterio.get('puntos', 0)
+
+            title.text = nombre_criterio.upper()
+            title.text_frame.paragraphs[0].font.size = PptxPt(32)
+            title.text_frame.paragraphs[0].font.bold = True
+            title.text_frame.paragraphs[0].font.color.rgb = PptxRGBColor(30, 58, 138)
+
+            # Puntos del criterio
+            txBox = slide_criterio.shapes.add_textbox(PptxInches(8), PptxInches(1.2), PptxInches(1.5), PptxInches(0.5))
+            tf = txBox.text_frame
+            tf.text = f"🎯 {puntos_criterio} puntos"
+            p = tf.paragraphs[0]
+            p.font.size = PptxPt(16)
+            p.font.bold = True
+            p.font.color.rgb = PptxRGBColor(245, 158, 11)
+
+            # Contenido resumido del criterio
+            contenido_criterio = datos_memoria.get('secciones_criterios', {}).get(nombre_criterio, '')
+
+            # Extraer puntos clave (primeras 800 caracteres aproximadamente)
+            resumen = contenido_criterio[:800] + "..." if len(contenido_criterio) > 800 else contenido_criterio
+
+            txBox2 = slide_criterio.shapes.add_textbox(PptxInches(1), PptxInches(2.2), PptxInches(8), PptxInches(4))
+            tf2 = txBox2.text_frame
+            tf2.text = resumen
+            tf2.word_wrap = True
+
+            for paragraph in tf2.paragraphs:
+                paragraph.font.size = PptxPt(14)
+                paragraph.space_before = PptxPt(8)
+                paragraph.line_spacing = 1.2
+
+        # ===== SLIDE CRONOGRAMA (si existe) =====
+        if df_cronograma is not None and len(df_cronograma) > 0:
+            slide_cronograma = prs.slides.add_slide(prs.slide_layouts[1])
+            title = slide_cronograma.shapes.title
+            title.text = "CRONOGRAMA DE EJECUCIÓN"
+            title.text_frame.paragraphs[0].font.size = PptxPt(40)
+            title.text_frame.paragraphs[0].font.bold = True
+            title.text_frame.paragraphs[0].font.color.rgb = PptxRGBColor(30, 58, 138)
+
+            # Tabla con las fases
+            rows = len(df_cronograma) + 1
+            cols = 3
+            left = PptxInches(1)
+            top = PptxInches(2)
+            width = PptxInches(8)
+            height = PptxInches(4.5)
+
+            table = slide_cronograma.shapes.add_table(rows, cols, left, top, width, height).table
+
+            # Encabezados
+            table.cell(0, 0).text = "FASE"
+            table.cell(0, 1).text = "DURACIÓN"
+            table.cell(0, 2).text = "PORCENTAJE"
+
+            for col in range(cols):
+                cell = table.cell(0, col)
+                cell.fill.solid()
+                cell.fill.fore_color.rgb = PptxRGBColor(30, 58, 138)
+                for paragraph in cell.text_frame.paragraphs:
+                    paragraph.font.size = PptxPt(14)
+                    paragraph.font.bold = True
+                    paragraph.font.color.rgb = PptxRGBColor(255, 255, 255)
+
+            # Datos
+            for idx, (_, row) in enumerate(df_cronograma.iterrows(), 1):
+                table.cell(idx, 0).text = str(row['Fase'])
+                table.cell(idx, 1).text = f"{row['Duración']} días"
+                table.cell(idx, 2).text = f"{row['Porcentaje']:.1f}%"
+
+                for col in range(cols):
+                    cell = table.cell(idx, col)
+                    for paragraph in cell.text_frame.paragraphs:
+                        paragraph.font.size = PptxPt(12)
+
+        # ===== SLIDE FINAL: CONTACTO =====
+        slide_contacto = prs.slides.add_slide(prs.slide_layouts[6])
+
+        # Fondo azul
+        background = slide_contacto.background
+        fill = background.fill
+        fill.solid()
+        fill.fore_color.rgb = PptxRGBColor(30, 58, 138)
+
+        # Título
+        txBox = slide_contacto.shapes.add_textbox(PptxInches(0.5), PptxInches(2), PptxInches(9), PptxInches(1))
+        tf = txBox.text_frame
+        tf.text = "¡GRACIAS POR SU ATENCIÓN!"
+        p = tf.paragraphs[0]
+        p.alignment = PP_ALIGN.CENTER
+        p.font.size = PptxPt(48)
+        p.font.bold = True
+        p.font.color.rgb = PptxRGBColor(255, 255, 255)
+
+        # Datos de contacto
+        txBox2 = slide_contacto.shapes.add_textbox(PptxInches(1), PptxInches(4), PptxInches(8), PptxInches(2))
+        tf2 = txBox2.text_frame
+
+        contacto_info = [
+            datos_empresa.get('razon_social', ''),
+            f"📧 {datos_empresa.get('email', '')}",
+            f"📞 {datos_empresa.get('telefono', '')}"
+        ]
+
+        for info in contacto_info:
+            p = tf2.add_paragraph()
+            p.text = info
+            p.alignment = PP_ALIGN.CENTER
+            p.font.size = PptxPt(20)
+            p.font.color.rgb = PptxRGBColor(255, 255, 255)
+            p.space_before = PptxPt(10)
+
+        print("✅ Presentación PowerPoint generada exitosamente")
+        return prs
+
+    except Exception as e:
+        print(f"❌ Error generando presentación PowerPoint: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
+
 def generar_memoria_por_criterios(datos_proyecto, criterios, texto_ppt, datos_empresa, num_paginas=60):
     """
     Genera contenido profesional desarrollado para cada criterio de valoración
@@ -3946,7 +4228,18 @@ def mostrar_aplicacion():
 
                 if st.session_state.get('incluir_cronograma', True):
                     st.info("📅 Se ha incluido cronograma Gantt profesional adaptado al sector del proyecto")
-                
+
+                # Guardar datos en session_state para presentación PowerPoint
+                st.session_state.ultima_memoria_generada = {
+                    'datos_memoria': datos_completos_doc,
+                    'datos_proyecto': datos_proyecto,
+                    'datos_empresa': datos_empresa,
+                    'criterios': st.session_state.criterios_valoracion,
+                    'df_cronograma': df_cronograma if 'df_cronograma' in locals() else None,
+                    'expediente': expediente,
+                    'num_paginas': num_paginas if 'num_paginas' in locals() else 60
+                }
+
                 # Botón de descarga
                 st.download_button(
                     label=f"📥 DESCARGAR MEMORIA TÉCNICA ({num_paginas if 'num_paginas' in locals() else 60} páginas)",
@@ -3955,6 +4248,64 @@ def mostrar_aplicacion():
                     mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                     use_container_width=True
                 )
+
+                # BOTÓN PARA GENERAR PRESENTACIÓN POWERPOINT
+                st.markdown("---")
+                st.markdown("### 📊 ¿Quieres una presentación visual?")
+                st.info("💡 Genera una presentación PowerPoint profesional basada en la memoria técnica que acabas de descargar")
+
+                if st.button("🎨 GENERAR PRESENTACIÓN POWERPOINT", type="secondary", use_container_width=True):
+                    with st.spinner("🎨 Generando presentación PowerPoint visual..."):
+                        try:
+                            # Obtener datos guardados
+                            datos_guardados = st.session_state.get('ultima_memoria_generada', {})
+
+                            # Generar presentación
+                            prs = generar_presentacion_pptx(
+                                datos_guardados.get('datos_memoria', {}),
+                                datos_guardados.get('datos_proyecto', {}),
+                                datos_guardados.get('datos_empresa', {}),
+                                datos_guardados.get('criterios', []),
+                                datos_guardados.get('df_cronograma')
+                            )
+
+                            if prs:
+                                # Guardar presentación en buffer
+                                pptx_buffer = io.BytesIO()
+                                prs.save(pptx_buffer)
+                                pptx_buffer.seek(0)
+
+                                st.success("✅ Presentación PowerPoint generada correctamente")
+
+                                # Botón de descarga de la presentación
+                                st.download_button(
+                                    label="📥 DESCARGAR PRESENTACIÓN POWERPOINT",
+                                    data=pptx_buffer.getvalue(),
+                                    file_name=f"Presentacion_{datos_guardados.get('expediente', 'Memoria')}_{datetime.now().strftime('%Y%m%d')}.pptx",
+                                    mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                                    use_container_width=True
+                                )
+
+                                num_slides = len(prs.slides)
+                                st.info(f"📊 La presentación contiene {num_slides} diapositivas con:")
+                                st.markdown("""
+                                - ✅ Portada profesional
+                                - ✅ Índice de contenidos
+                                - ✅ Presentación de la empresa
+                                - ✅ Datos del proyecto
+                                - ✅ Resumen visual de cada criterio
+                                - ✅ Cronograma de ejecución (si está incluido)
+                                - ✅ Slide de contacto
+                                """)
+                            else:
+                                st.error("❌ Error al generar la presentación PowerPoint")
+
+                        except Exception as e:
+                            st.error(f"❌ Error al generar presentación: {e}")
+                            import traceback
+                            traceback.print_exc()
+
+                st.markdown("---")
 
                 # Vista previa de criterios
 
