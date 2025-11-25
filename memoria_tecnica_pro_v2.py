@@ -1923,8 +1923,8 @@ def crear_cronograma_tabla_word(doc, df_cronograma, datos_proyecto, tipo_periodo
         dias_por_periodo = duracion_total_dias // num_periodos if num_periodos > 0 else 1
 
         for i in range(num_periodos):
-            fecha_periodo = fecha_inicio_total + timedelta(days=i * dias_por_periodo)
-            gantt_hdr[i + 1].text = f"{tipo_periodo} {i+1}\n{fecha_periodo.strftime('%d/%m')}"
+            # Solo mostrar el número del período sin fecha específica
+            gantt_hdr[i + 1].text = f"{tipo_periodo} {i+1}"
 
             # Color encabezado períodos
             shading_elm = parse_xml(r'<w:shd {} w:fill="3B82F6"/>'.format(nsdecls('w')))
