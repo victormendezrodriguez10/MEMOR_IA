@@ -2102,12 +2102,29 @@ def agregar_numeracion_paginas(doc):
     except Exception as e:
         print(f"Error añadiendo numeración de páginas: {e}")
 
-def generar_memoria_por_criterios(datos_proyecto, criterios, texto_ppt, datos_empresa):
+def generar_memoria_por_criterios(datos_proyecto, criterios, texto_ppt, datos_empresa, num_paginas=60):
     """
     Genera contenido profesional desarrollado para cada criterio de valoración
     con estructura adaptada al tipo de criterio y sector específico
+
+    Args:
+        num_paginas: Número aproximado de páginas totales de la memoria
     """
     secciones_criterios = {}
+
+    # Calcular extensión por criterio basado en páginas totales
+    # Restar ~10 páginas para portada, índice, empresa y cronograma
+    paginas_para_criterios = max(1, num_paginas - 10)
+    num_criterios = len(criterios)
+    paginas_por_criterio = paginas_para_criterios // num_criterios if num_criterios > 0 else 5
+
+    # Calcular palabras aproximadas por criterio (1 página ≈ 500 palabras)
+    palabras_por_criterio = paginas_por_criterio * 500
+
+    # Calcular tokens necesarios (1 palabra ≈ 1.3 tokens de salida)
+    tokens_por_criterio = min(16000, int(palabras_por_criterio * 1.3))
+
+    print(f"DEBUG: Configuración de extensión - Total: {num_paginas} págs, Por criterio: {paginas_por_criterio} págs ({palabras_por_criterio} palabras, {tokens_por_criterio} tokens)")
 
     # Obtener análisis avanzado si está disponible
     analisis_ppt = st.session_state.get('analisis_ppt', {})
@@ -2237,12 +2254,13 @@ def generar_memoria_por_criterios(datos_proyecto, criterios, texto_ppt, datos_em
         - Prefiere ser EXTENSO y DETALLADO que conciso
 
         DESARROLLO PROFUNDO Y COMPLETO:
-        - Desarrolla el criterio en 5-8 páginas de contenido denso y técnico (NO menos)
+        - Desarrolla el criterio en aproximadamente {paginas_por_criterio} páginas ({palabras_por_criterio} palabras aprox.)
+        - {'Sé CONCISO pero COMPLETO' if paginas_por_criterio <= 2 else 'Desarrolla con DETALLE y PROFUNDIDAD' if paginas_por_criterio <= 5 else 'Desarrolla EXHAUSTIVAMENTE con MÁXIMO DETALLE'}
         - Relaciona DIRECTAMENTE cada aspecto con el pliego técnico adjunto
         - Justifica con ejemplos concretos de la experiencia de la empresa
         - Incluye datos cuantitativos, KPIs, métricas y especificaciones técnicas
         - Menciona normativas, certificaciones y estándares aplicables
-        - NO resumas ni acortes el contenido - DESARROLLA TODO EN PROFUNDIDAD
+        - {'Resume los puntos clave sin perder profundidad técnica' if paginas_por_criterio <= 2 else 'NO resumas ni acortes el contenido - DESARROLLA TODO EN PROFUNDIDAD' if paginas_por_criterio > 5 else 'Equilibra profundidad técnica con claridad'}
 
         EJEMPLO DE ESTRUCTURA (desarrolla CADA sección en profundidad):
 
@@ -2264,12 +2282,15 @@ def generar_memoria_por_criterios(datos_proyecto, criterios, texto_ppt, datos_em
         Control de calidad y seguimiento:
         [3-4 párrafos adicionales sobre sistemas de control, reporting, mejora continua - 500-700 palabras MÍNIMO]
 
-        TOTAL ESPERADO: 4000-6000 palabras por criterio (NO MENOS)
+        TOTAL ESPERADO: Aproximadamente {palabras_por_criterio} palabras para este criterio
         """
 
-        # SOLUCIÓN: Generación SIN LÍMITES con continuación automática
-        # max_tokens=16000 (máximo de Claude Opus) + auto_continuar=True
-        respuesta = llamar_ia_mejorado(prompt, max_tokens=16000, temperature=0.3, auto_continuar=True)
+        # Ajustar generación según extensión seleccionada
+        # Para memorias cortas (≤3 págs/criterio), desactivar auto-continuación
+        # Para memorias largas, mantener auto-continuación activada
+        auto_cont = paginas_por_criterio > 3
+        print(f"DEBUG: Generando criterio '{nombre_criterio}' con {tokens_por_criterio} tokens, auto_continuar={auto_cont}")
+        respuesta = llamar_ia_mejorado(prompt, max_tokens=tokens_por_criterio, temperature=0.3, auto_continuar=auto_cont)
         
         # Limpieza adicional para eliminar cualquier símbolo no deseado
         if respuesta:
@@ -3569,20 +3590,20 @@ def mostrar_aplicacion():
         st.markdown("""
         <div class="warning-box">
             <h3>⚠️ AVISO IMPORTANTE - GENERACIÓN SIN LÍMITES</h3>
-            <p><strong>Este sistema utiliza Inteligencia Artificial avanzada para generar memorias técnicas EXTENSAS Y COMPLETAS.</strong></p>
-            <p><strong>🚀 NUEVO: Sistema de generación continua SIN LÍMITES</strong></p>
+            <p><strong>Este sistema utiliza Inteligencia Artificial avanzada para generar memorias técnicas profesionales.</strong></p>
+            <p><strong>🚀 Sistema de generación adaptable con control de extensión</strong></p>
             <ul>
-                <li>✓ Cada criterio se desarrolla en 4000-6000 palabras (5-8 páginas)</li>
-                <li>✓ Si el texto se corta, se continúa automáticamente hasta completarlo</li>
-                <li>✓ Contenido técnico profundo y exhaustivo, no resúmenes</li>
-                <li>✓ Relación directa con el pliego técnico (15.000 caracteres de contexto)</li>
+                <li>✓ Extensión ajustable: desde memorias concisas hasta exhaustivas</li>
+                <li>✓ Auto-continuación inteligente para memorias extensas (>3 págs/criterio)</li>
+                <li>✓ Contenido técnico adaptado al tamaño seleccionado</li>
+                <li>✓ Relación directa con el pliego técnico (100.000 caracteres de contexto)</li>
             </ul>
             <p>El sistema se centrará en:</p>
             <ul>
-                <li>✓ Desarrollar cada criterio de valoración en MÁXIMA PROFUNDIDAD</li>
+                <li>✓ Desarrollar cada criterio de valoración según la extensión seleccionada</li>
                 <li>✓ Relacionar cada criterio con el pliego técnico</li>
                 <li>✓ Justificar con los recursos de la empresa</li>
-                <li>✓ Crear contenido técnico profesional EXTENSO</li>
+                <li>✓ Crear contenido técnico profesional de calidad</li>
             </ul>
             <p><strong>⏱️ Tiempo estimado:</strong> 2-5 minutos por criterio (generación completa)</p>
             <p>Los documentos DEBEN ser revisados por personal técnico cualificado.</p>
@@ -3712,13 +3733,15 @@ def mostrar_aplicacion():
                 progress = st.progress(0)
                 
                 # 1. GENERAR DESARROLLO DE CRITERIOS (Lo más importante)
-                with st.spinner("🎯 Desarrollando criterios de valoración SIN LÍMITES (generación extensa con continuación automática)..."):
-                    st.info("ℹ️ Generando contenido extenso y completo. Si un criterio se corta, se continuará automáticamente hasta completarlo.")
+                with st.spinner(f"🎯 Desarrollando criterios de valoración ({num_paginas} páginas aprox.)..."):
+                    paginas_por_crit = (num_paginas - 10) // len(st.session_state.criterios_valoracion) if len(st.session_state.criterios_valoracion) > 0 else 5
+                    st.info(f"ℹ️ Generando aprox. {paginas_por_crit} páginas por criterio. {'Auto-continuación activada para contenido extenso.' if paginas_por_crit > 3 else 'Contenido conciso ajustado al tamaño seleccionado.'}")
                     secciones_criterios = generar_memoria_por_criterios(
                         datos_proyecto,
                         st.session_state.criterios_valoracion,
                         st.session_state.texto_ppt,
-                        datos_empresa
+                        datos_empresa,
+                        num_paginas
                     )
                     progress.progress(60)
                 
@@ -3912,9 +3935,11 @@ def mostrar_aplicacion():
                 # Contar documentos anexos
                 num_anexos = len(perfil_empresa.get('documentos_anexos', [])) if perfil_empresa else 0
 
+                paginas_reales_por_crit = (num_paginas - 10) // len(st.session_state.criterios_valoracion) if len(st.session_state.criterios_valoracion) > 0 else 5
+                palabras_por_crit = paginas_reales_por_crit * 500
                 st.success(f"✅ Memoria técnica de {num_paginas if 'num_paginas' in locals() else 60} páginas generada correctamente")
-                st.success("🚀 Generación SIN LÍMITES activada - Contenido completo y extenso sin cortes")
-                st.info("📌 Los criterios de valoración han sido desarrollados en profundidad (4000-6000 palabras cada uno) y relacionados con el pliego técnico")
+                st.success(f"🚀 Sistema adaptable activado - Aprox. {paginas_reales_por_crit} páginas por criterio")
+                st.info(f"📌 Los criterios de valoración han sido desarrollados con aprox. {palabras_por_crit} palabras cada uno y relacionados con el pliego técnico")
 
                 if num_anexos > 0:
                     st.info(f"📎 Se han incluido {num_anexos} documentos como anexos en la memoria técnica")
