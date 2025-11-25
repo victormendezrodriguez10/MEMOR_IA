@@ -14,10 +14,16 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Priorizar st.secrets si está disponible (Streamlit), sino usar .env
+DATABASE_URL = None
 try:
-    DATABASE_URL = st.secrets.get("DATABASE_URL")
+    # En Streamlit Cloud, usar secrets
+    DATABASE_URL = st.secrets["DATABASE_URL"]
 except:
+    # En local, usar .env
     DATABASE_URL = os.getenv("DATABASE_URL")
+
+if not DATABASE_URL:
+    raise ValueError("❌ DATABASE_URL no configurado. Revisa .env o Streamlit secrets")
 
 # Pool de conexiones global
 connection_pool = None
@@ -28,6 +34,9 @@ def init_db_pool():
 
     if connection_pool is None:
         try:
+            if not DATABASE_URL:
+                raise ValueError("DATABASE_URL no está configurado")
+
             connection_pool = psycopg2.pool.SimpleConnectionPool(
                 1,  # minconn
                 10,  # maxconn
@@ -36,9 +45,13 @@ def init_db_pool():
             if connection_pool:
                 print("✅ Pool de conexiones PostgreSQL inicializado")
                 return True
+            else:
+                raise Exception("No se pudo crear el pool de conexiones")
         except Exception as e:
-            print(f"❌ Error al inicializar pool de conexiones: {e}")
-            return False
+            error_msg = f"❌ Error al inicializar pool de conexiones: {e}"
+            print(error_msg)
+            st.error(error_msg)
+            raise Exception(f"No se pudo inicializar el pool de conexiones: {e}")
     return True
 
 def init_db():
@@ -58,6 +71,9 @@ def get_db_connection():
     try:
         if connection_pool is None:
             init_db_pool()
+
+        if connection_pool is None:
+            raise Exception("No se pudo inicializar el pool de conexiones")
 
         conn = connection_pool.getconn()
         # Usar RealDictCursor para acceder a columnas por nombre
