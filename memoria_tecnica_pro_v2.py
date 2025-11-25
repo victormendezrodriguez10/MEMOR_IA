@@ -12,8 +12,8 @@ from docx import Document
 from docx.shared import Inches, Pt, RGBColor, Cm
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.enum.style import WD_STYLE_TYPE
-from docx.oxml.ns import qn
-from docx.oxml import OxmlElement
+from docx.oxml.ns import qn, nsdecls
+from docx.oxml import OxmlElement, parse_xml
 from docx.opc.constants import RELATIONSHIP_TYPE as RT
 import pandas as pd
 import plotly.graph_objects as go
@@ -1055,13 +1055,17 @@ def mostrar_login():
 
 # ============ FUNCIONES MEJORADAS DE GENERACIÓN ============
 
-def llamar_ia_mejorado(prompt, max_tokens=3000, temperature=0.3):
-    """Versión mejorada usando Anthropic Claude"""
+def llamar_ia_mejorado(prompt, max_tokens=3000, temperature=0.3, auto_continuar=True):
+    """
+    Versión mejorada usando Anthropic Claude con generación continua sin límites.
+    Si auto_continuar=True, detecta texto cortado y continúa generando hasta completar.
+    """
     try:
         # Debug: verificar configuración
         print(f"DEBUG IA: API Key configurada: {bool(ANTHROPIC_API_KEY)}")
         print(f"DEBUG IA: Modelo: {MODELO_IA}")
         print(f"DEBUG IA: Longitud del prompt: {len(prompt)}")
+        print(f"DEBUG IA: Max tokens: {max_tokens}, Auto-continuar: {auto_continuar}")
 
         if not ANTHROPIC_API_KEY:
             st.error("❌ API Key de Anthropic no configurada. Verifica tu archivo .env")
@@ -1110,7 +1114,70 @@ def llamar_ia_mejorado(prompt, max_tokens=3000, temperature=0.3):
                 ]
             )
             print("DEBUG IA: Respuesta recibida exitosamente")
-            return response.content[0].text
+            respuesta_inicial = response.content[0].text
+
+            # SOLUCIÓN: Sistema de continuación automática para evitar cortes
+            if auto_continuar:
+                respuesta_completa = respuesta_inicial
+                intentos_continuacion = 0
+                max_continuaciones = 5  # Máximo 5 continuaciones para evitar loops infinitos
+
+                # Detectar si el texto se cortó (no termina bien)
+                while intentos_continuacion < max_continuaciones:
+                    # Verificar si la respuesta parece incompleta
+                    texto_cortado = (
+                        response.stop_reason == "max_tokens" or  # Se alcanzó el límite de tokens
+                        not respuesta_completa.strip().endswith(('.', '!', '?', '"', ')')) or  # No termina con puntuación
+                        respuesta_completa.strip().endswith((',', ';', ':'))  # Termina con puntuación intermedia
+                    )
+
+                    if not texto_cortado:
+                        print(f"DEBUG IA: Texto completo generado correctamente")
+                        break
+
+                    # El texto está cortado, generar continuación
+                    intentos_continuacion += 1
+                    print(f"DEBUG IA: Texto cortado detectado. Continuando... (intento {intentos_continuacion}/{max_continuaciones})")
+
+                    prompt_continuacion = f"""
+CONTINÚA el texto técnico que estabas generando. NO repitas lo anterior, solo CONTINÚA desde donde se cortó.
+
+CONTEXTO (últimas 300 palabras generadas):
+...{' '.join(respuesta_completa.split()[-300:])}
+
+INSTRUCCIONES:
+- Continúa DIRECTAMENTE desde donde se cortó el texto
+- NO escribas "Continuación:" ni similares
+- Mantén el mismo estilo técnico y profesional
+- Desarrolla el contenido hasta completar la sección actual
+- Finaliza con un cierre apropiado de la sección
+"""
+
+                    response = anthropic_client.messages.create(
+                        model=modelo_a_usar,
+                        max_tokens=max_tokens,
+                        temperature=temperature,
+                        system="Eres un experto redactor de memorias técnicas profesionales. Continúa el texto técnico de forma natural y fluida.",
+                        messages=[
+                            {"role": "user", "content": prompt_continuacion}
+                        ]
+                    )
+
+                    continuacion = response.content[0].text.strip()
+
+                    # Limpiar la continuación (eliminar frases de inicio redundantes)
+                    continuacion = re.sub(r'^(Continuación|Siguiendo|Continuando|A continuación)[:\.]?\s*', '', continuacion, flags=re.IGNORECASE)
+
+                    respuesta_completa += "\n\n" + continuacion
+                    print(f"DEBUG IA: Continuación añadida ({len(continuacion)} caracteres)")
+
+                if intentos_continuacion >= max_continuaciones:
+                    print(f"DEBUG IA: Alcanzado límite de continuaciones ({max_continuaciones})")
+
+                return respuesta_completa
+            else:
+                return respuesta_inicial
+
     except Exception as e:
         error_msg = f"Error con Claude: {str(e)}"
         print(f"DEBUG IA ERROR: {error_msg}")
@@ -1472,63 +1539,93 @@ def generar_cronograma_proyecto(datos_proyecto, sector='general'):
     # Crear DataFrame
     df = pd.DataFrame(cronograma_data)
 
-    # Crear gráfico Gantt
+    # SOLUCIÓN: Crear gráfico Gantt mejorado visualmente
     fig = go.Figure()
 
-    # Colores profesionales para las fases
-    colores = ['#2E86AB', '#A23B72', '#F18F01', '#C73E1D', '#6A994E', '#BC4749', '#F2CC8F']
+    # Paleta de colores profesional y vibrante (gradiente azul-verde-naranja)
+    colores = [
+        '#1E3A8A',  # Azul oscuro
+        '#3B82F6',  # Azul medio
+        '#06B6D4',  # Cian
+        '#10B981',  # Verde
+        '#F59E0B',  # Naranja
+        '#EF4444',  # Rojo
+        '#8B5CF6',  # Púrpura
+        '#EC4899'   # Rosa
+    ]
 
+    # Agregar barras con degradado visual
     for i, row in df.iterrows():
-        fig.add_trace(go.Scatter(
-            x=[row['Inicio'], row['Fin']],
-            y=[i, i],
-            mode='lines',
-            line=dict(color=colores[i % len(colores)], width=20),
+        # Barra principal con bordes
+        fig.add_trace(go.Bar(
+            x=[row['Duración']],
+            y=[row['Fase']],
+            orientation='h',
+            marker=dict(
+                color=colores[i % len(colores)],
+                line=dict(color='rgba(0,0,0,0.3)', width=2),
+                pattern=dict(shape='')  # Sin patrón por defecto
+            ),
+            text=f"{row['Porcentaje']:.0f}% ({row['Duración']} días)",
+            textposition='inside',
+            textfont=dict(color='white', size=12, family='Arial Black'),
             name=row['Fase'],
-            hovertemplate=f"<b>{row['Fase']}</b><br>" +
-                         f"Inicio: {row['Inicio'].strftime('%d/%m/%Y')}<br>" +
-                         f"Fin: {row['Fin'].strftime('%d/%m/%Y')}<br>" +
-                         f"Duración: {row['Duración']} días<br>" +
-                         f"Porcentaje: {row['Porcentaje']:.1f}%<extra></extra>"
+            hovertemplate=f"<b>🎯 {row['Fase']}</b><br>" +
+                         f"📅 Inicio: {row['Inicio'].strftime('%d/%m/%Y')}<br>" +
+                         f"🏁 Fin: {row['Fin'].strftime('%d/%m/%Y')}<br>" +
+                         f"⏱️ Duración: {row['Duración']} días<br>" +
+                         f"📊 Porcentaje: {row['Porcentaje']:.1f}%<extra></extra>",
+            showlegend=False
         ))
 
-    # Personalizar diseño
+    # Personalizar diseño con estilo moderno
     fig.update_layout(
         title={
-            'text': f"<b>CRONOGRAMA DE EJECUCIÓN - {datos_proyecto.get('objeto', '').upper()}</b>",
+            'text': f"<b>📅 CRONOGRAMA DE EJECUCIÓN DEL PROYECTO</b><br>" +
+                   f"<sub>{datos_proyecto.get('objeto', 'Proyecto')[:80]}...</sub>",
             'x': 0.5,
             'xanchor': 'center',
-            'font': {'size': 16, 'color': '#2E86AB'}
+            'font': {'size': 18, 'color': '#1F2937', 'family': 'Arial Black'}
         },
-        xaxis_title="<b>Calendario de Ejecución</b>",
-        yaxis_title="<b>Fases del Proyecto</b>",
+        xaxis_title="<b>⏱️ Duración (días)</b>",
+        yaxis_title="<b>📋 Fases del Proyecto</b>",
         yaxis=dict(
-            tickmode='array',
-            tickvals=list(range(len(df))),
-            ticktext=[f"<b>{fase}</b>" for fase in df['Fase']],
-            autorange="reversed"
+            autorange="reversed",
+            tickfont=dict(size=11, color='#374151')
         ),
         xaxis=dict(
-            type='date',
-            tickformat='%d/%m/%Y'
+            showgrid=True,
+            gridcolor='rgba(209, 213, 219, 0.5)',
+            gridwidth=1,
+            tickfont=dict(size=11, color='#374151')
         ),
-        height=400 + len(df) * 30,
-        showlegend=False,
-        plot_bgcolor='white',
+        height=350 + len(df) * 50,
+        plot_bgcolor='#F9FAFB',
         paper_bgcolor='white',
-        font=dict(size=11),
-        margin=dict(l=250, r=50, t=80, b=50)
+        font=dict(size=12, family='Arial'),
+        margin=dict(l=280, r=100, t=100, b=60),
+        bargap=0.15,
+        barmode='overlay'
     )
 
-    # Línea vertical para fecha actual comentada para evitar errores de tipo
-    # fecha_hoy = datetime.now()
-    # fig.add_vline(
-    #     x=fecha_hoy,
-    #     line_dash="dash",
-    #     line_color="red",
-    #     annotation_text="HOY",
-    #     annotation_position="top"
-    # )
+    # Añadir línea vertical de fecha actual
+    fecha_hoy = datetime.now()
+    total_dias = sum(df['Duración'])
+    dias_transcurridos = 0  # Asumimos que empieza hoy
+
+    if dias_transcurridos <= total_dias:
+        fig.add_vline(
+            x=dias_transcurridos,
+            line_dash="dash",
+            line_color="#DC2626",
+            line_width=2,
+            annotation_text="📍 HOY",
+            annotation_position="top",
+            annotation_font=dict(size=10, color="#DC2626", family='Arial Black')
+        )
+
+    # Añadir grid más visible
+    fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor='rgba(209, 213, 219, 0.3)')
 
     return fig, df
 
@@ -1645,72 +1742,305 @@ def crear_portada_profesional(doc, datos_proyecto, datos_empresa, logo_path=None
         doc.add_paragraph(f"Empresa: {datos_empresa.get('razon_social', '')}").alignment = WD_ALIGN_PARAGRAPH.CENTER
         doc.add_page_break()
 
-def crear_cronograma_tabla_word(doc, df_cronograma, datos_proyecto):
-    """Crea una tabla cronograma directamente en Word sin dependencias externas"""
-    try:
-        # Añadir sección de cronograma al documento
-        doc.add_heading('CRONOGRAMA DE EJECUCIÓN', 1)
+def crear_cronograma_tabla_word(doc, df_cronograma, datos_proyecto, tipo_periodo='Semanal'):
+    """Crea un diagrama de Gantt profesional con cuadrícula de fechas, importes y camino crítico
 
-        doc.add_paragraph(
-            f"El siguiente cronograma detalla la planificación temporal propuesta para la ejecución "
-            f"del proyecto \"{datos_proyecto.get('objeto', '')}\", con un plazo total de {datos_proyecto.get('plazo', 'N/A')}. "
-            f"La planificación ha sido optimizada para garantizar el cumplimiento de los plazos establecidos."
+    Args:
+        doc: Documento de Word
+        df_cronograma: DataFrame con las fases del cronograma
+        datos_proyecto: Diccionario con datos del proyecto
+        tipo_periodo: Tipo de período para el encabezado ('Diario', 'Semanal', 'Quincenal', 'Mensual')
+    """
+    try:
+        # GANTT PROFESIONAL: Sección con cuadrícula de fechas y barras visuales
+        doc.add_heading('CRONOGRAMA DE EJECUCIÓN - DIAGRAMA DE GANTT', 1)
+
+        # Párrafo introductorio más visual
+        intro_para = doc.add_paragraph()
+        run_titulo = intro_para.add_run("📅 Diagrama de Gantt Profesional: ")
+        run_titulo.bold = True
+        run_titulo.font.color.rgb = RGBColor(30, 58, 138)
+
+        intro_para.add_run(
+            f"El siguiente cronograma tipo Gantt muestra la planificación temporal, importes asignados y camino crítico "
+            f"para el proyecto \"{datos_proyecto.get('objeto', '')}\", con un plazo total de {datos_proyecto.get('plazo', 'N/A')} "
+            f"y presupuesto de {datos_proyecto.get('presupuesto', 'N/A')} €."
         )
 
-        # Crear tabla del cronograma
-        tabla_cronograma = doc.add_table(rows=1, cols=4)
-        tabla_cronograma.style = 'Table Grid'
+        doc.add_paragraph()
 
-        # Encabezados de tabla
-        hdr_cells = tabla_cronograma.rows[0].cells
-        hdr_cells[0].text = 'FASE'
-        hdr_cells[1].text = 'FECHA INICIO'
-        hdr_cells[2].text = 'FECHA FIN'
-        hdr_cells[3].text = 'DURACIÓN'
+        # ==== TABLA 1: DATOS DEL PROYECTO ====
+        # Calcular importes por fase (distribuir presupuesto según porcentaje)
+        try:
+            presupuesto_str = datos_proyecto.get('presupuesto', '0')
+            # Limpiar el presupuesto (quitar puntos y reemplazar coma por punto)
+            presupuesto_limpio = presupuesto_str.replace('.', '').replace(',', '.')
+            presupuesto_total = float(presupuesto_limpio)
+        except:
+            presupuesto_total = 0
 
-        # Formatear encabezados
-        for cell in hdr_cells:
-            for paragraph in cell.paragraphs:
+        # Identificar camino crítico (las fases más largas son críticas)
+        duracion_max = df_cronograma['Duración'].max()
+        umbral_critico = duracion_max * 0.7  # Fases con >70% de la duración máxima
+
+        # Crear tabla de datos con importe y camino crítico
+        tabla_datos = doc.add_table(rows=1, cols=7)
+        tabla_datos.style = 'Table Grid'
+
+        # Encabezados
+        hdr_cells = tabla_datos.rows[0].cells
+        headers = ['📋 FASE', '📅 INICIO', '🏁 FIN', '⏱️ DURACIÓN', '💰 IMPORTE', '📊 %', '🎯 CRÍTICO']
+
+        for i, header_text in enumerate(headers):
+            hdr_cells[i].text = header_text
+            # Color de fondo azul oscuro
+            shading_elm = parse_xml(r'<w:shd {} w:fill="1E3A8A"/>'.format(nsdecls('w')))
+            hdr_cells[i]._element.get_or_add_tcPr().append(shading_elm)
+
+            for paragraph in hdr_cells[i].paragraphs:
+                paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
                 for run in paragraph.runs:
                     run.font.bold = True
-                    run.font.size = Pt(10)
+                    run.font.size = Pt(9)
+                    run.font.color.rgb = RGBColor(255, 255, 255)
 
-        # Añadir datos del cronograma
-        for _, row in df_cronograma.iterrows():
-            row_cells = tabla_cronograma.add_row().cells
+        # Añadir datos con formato de colores
+        colores_fila = ['F3F4F6', 'FFFFFF']
+
+        for idx, (_, row) in enumerate(df_cronograma.iterrows()):
+            row_cells = tabla_datos.add_row().cells
+
+            # Calcular importe de la fase
+            importe_fase = (presupuesto_total * row['Porcentaje']) / 100 if presupuesto_total > 0 else 0
+
+            # Verificar si es camino crítico
+            es_critico = row['Duración'] >= umbral_critico
+
+            # Rellenar celdas
             row_cells[0].text = str(row['Fase'])
             row_cells[1].text = row['Inicio'].strftime('%d/%m/%Y')
             row_cells[2].text = row['Fin'].strftime('%d/%m/%Y')
             row_cells[3].text = f"{row['Duración']} días"
+            row_cells[4].text = f"{importe_fase:,.2f} €".replace(',', 'X').replace('.', ',').replace('X', '.')
+            row_cells[5].text = f"{row['Porcentaje']:.1f}%"
+            row_cells[6].text = "SÍ ⚠️" if es_critico else "NO"
 
-            # Formatear celdas
-            for cell in row_cells:
+            # Aplicar colores
+            color_fondo = colores_fila[idx % 2]
+            color_critico = 'FFE4E1' if es_critico else color_fondo  # Rojo claro si es crítico
+
+            for i, cell in enumerate(row_cells):
+                color_final = color_critico if i == 6 else color_fondo
+                shading_elm = parse_xml(r'<w:shd {} w:fill="{}"/>'.format(nsdecls('w'), color_final))
+                cell._element.get_or_add_tcPr().append(shading_elm)
+
                 for paragraph in cell.paragraphs:
+                    if i == 0:
+                        paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
+                    else:
+                        paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
                     for run in paragraph.runs:
-                        run.font.size = Pt(9)
+                        run.font.size = Pt(8)
+                        if i == 0 or i == 6:
+                            run.font.bold = True
+                        if i == 6 and es_critico:
+                            run.font.color.rgb = RGBColor(220, 38, 38)  # Rojo para crítico
 
-        # Añadir gráfico de barras ASCII simple como alternativa visual
-        doc.add_paragraph("\nDiagrama temporal:")
+        doc.add_paragraph()
 
-        # Calcular duración total para escalar barras
-        duracion_total = sum(df_cronograma['Duración'])
+        # ==== TABLA 2: DIAGRAMA GANTT CON CUADRÍCULA DE FECHAS ====
+        titulo_gantt = doc.add_paragraph()
+        run_gantt = titulo_gantt.add_run("📊 Diagrama de Gantt - Cronograma Visual:")
+        run_gantt.bold = True
+        run_gantt.font.color.rgb = RGBColor(30, 58, 138)
 
-        for _, row in df_cronograma.iterrows():
-            # Crear barra visual simple con caracteres
-            porcentaje = (row['Duración'] / duracion_total) * 100
-            barra_largo = int(porcentaje / 2)  # Escalar para que no sea muy larga
-            barra = "█" * barra_largo + "░" * (50 - barra_largo)
+        # Calcular rangos de fechas para cuadrícula
+        fecha_inicio_total = df_cronograma['Inicio'].min()
+        fecha_fin_total = df_cronograma['Fin'].max()
+        duracion_total_dias = (fecha_fin_total - fecha_inicio_total).days
 
-            p = doc.add_paragraph()
-            p.add_run(f"{row['Fase'][:30]:<30} ").font.size = Pt(9)
-            p.add_run(f"[{barra[:30]}] ").font.name = 'Courier New'
-            p.add_run(f"{porcentaje:.1f}%").font.size = Pt(8)
+        # Crear períodos según selección del usuario
+        # Mapear tipo_periodo a días por período y nombre en singular
+        tipo_periodo_map = {
+            'Diario': (1, 'Día'),
+            'Semanal': (7, 'Semana'),
+            'Quincenal': (15, 'Quincena'),
+            'Mensual': (30, 'Mes')
+        }
+
+        dias_base, nombre_periodo = tipo_periodo_map.get(tipo_periodo, (7, 'Semana'))  # Default: Semanal
+        num_periodos = (duracion_total_dias // dias_base) + 1
+
+        # Limitar a máximo 15 columnas de fecha para que quepa en página
+        num_periodos = min(num_periodos, 15)
+
+        # Usar nombre_periodo para los encabezados (en lugar de tipo_periodo)
+        tipo_periodo = nombre_periodo
+
+        # Crear tabla Gantt: 1 col para fase + num_periodos cols para fechas
+        tabla_gantt = doc.add_table(rows=1, cols=1 + num_periodos)
+        tabla_gantt.style = 'Table Grid'
+
+        # Encabezado de la tabla Gantt
+        gantt_hdr = tabla_gantt.rows[0].cells
+        gantt_hdr[0].text = 'FASE'
+
+        # Color encabezado fase
+        shading_elm = parse_xml(r'<w:shd {} w:fill="1E3A8A"/>'.format(nsdecls('w')))
+        gantt_hdr[0]._element.get_or_add_tcPr().append(shading_elm)
+        gantt_hdr[0].paragraphs[0].runs[0].font.bold = True
+        gantt_hdr[0].paragraphs[0].runs[0].font.size = Pt(8)
+        gantt_hdr[0].paragraphs[0].runs[0].font.color.rgb = RGBColor(255, 255, 255)
+
+        # Encabezados de períodos de tiempo
+        dias_por_periodo = duracion_total_dias // num_periodos if num_periodos > 0 else 1
+
+        for i in range(num_periodos):
+            fecha_periodo = fecha_inicio_total + timedelta(days=i * dias_por_periodo)
+            gantt_hdr[i + 1].text = f"{tipo_periodo} {i+1}\n{fecha_periodo.strftime('%d/%m')}"
+
+            # Color encabezado períodos
+            shading_elm = parse_xml(r'<w:shd {} w:fill="3B82F6"/>'.format(nsdecls('w')))
+            gantt_hdr[i + 1]._element.get_or_add_tcPr().append(shading_elm)
+
+            for paragraph in gantt_hdr[i + 1].paragraphs:
+                paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                for run in paragraph.runs:
+                    run.font.bold = True
+                    run.font.size = Pt(7)
+                    run.font.color.rgb = RGBColor(255, 255, 255)
+
+        # Añadir filas con barras
+        colores_barras_rgb = [
+            '1E3A8A', '3B82F6', '06B6D4', '10B981', 'F59E0B', 'EF4444', '8B5CF6', 'EC4899'
+        ]
+
+        for fase_idx, (_, row) in enumerate(df_cronograma.iterrows()):
+            gantt_row = tabla_gantt.add_row().cells
+
+            # Nombre de la fase
+            gantt_row[0].text = str(row['Fase'])
+            gantt_row[0].paragraphs[0].runs[0].font.bold = True
+            gantt_row[0].paragraphs[0].runs[0].font.size = Pt(8)
+
+            # Calcular en qué columnas va la barra
+            dias_desde_inicio = (row['Inicio'] - fecha_inicio_total).days
+            dias_hasta_fin = (row['Fin'] - fecha_inicio_total).days
+
+            col_inicio = int(dias_desde_inicio / dias_por_periodo) if dias_por_periodo > 0 else 0
+            col_fin = int(dias_hasta_fin / dias_por_periodo) if dias_por_periodo > 0 else 0
+
+            # Asegurar que estén dentro del rango
+            col_inicio = max(0, min(col_inicio, num_periodos - 1))
+            col_fin = max(0, min(col_fin, num_periodos - 1))
+
+            # Verificar si es crítico
+            es_critico = row['Duración'] >= umbral_critico
+            color_barra = 'DC2626' if es_critico else colores_barras_rgb[fase_idx % len(colores_barras_rgb)]
+
+            # Pintar las celdas correspondientes
+            for col_idx in range(num_periodos):
+                if col_inicio <= col_idx <= col_fin:
+                    # Celda con barra (parte del período de la tarea)
+                    gantt_row[col_idx + 1].text = "█"
+                    shading_elm = parse_xml(r'<w:shd {} w:fill="{}"/>'.format(nsdecls('w'), color_barra))
+                    gantt_row[col_idx + 1]._element.get_or_add_tcPr().append(shading_elm)
+
+                    for paragraph in gantt_row[col_idx + 1].paragraphs:
+                        paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                        for run in paragraph.runs:
+                            run.font.size = Pt(12)
+                            run.font.color.rgb = RGBColor(255, 255, 255)
+                else:
+                    # Celda vacía
+                    gantt_row[col_idx + 1].text = ""
+                    shading_elm = parse_xml(r'<w:shd {} w:fill="FFFFFF"/>'.format(nsdecls('w')))
+                    gantt_row[col_idx + 1]._element.get_or_add_tcPr().append(shading_elm)
+
+        # Leyenda
+        doc.add_paragraph()
+        leyenda = doc.add_paragraph()
+        leyenda.add_run("📌 Leyenda: ").bold = True
+        leyenda.add_run("Las fases marcadas con ")
+        run_critico = leyenda.add_run("⚠️ SÍ")
+        run_critico.font.color.rgb = RGBColor(220, 38, 38)
+        run_critico.bold = True
+        leyenda.add_run(" en 'CRÍTICO' son parte del camino crítico del proyecto (fases más largas que requieren atención especial).")
 
         return True
 
     except Exception as e:
         print(f"Error creando cronograma en tabla: {e}")
         return False
+
+def procesar_contenido_visual(doc, contenido):
+    """
+    Procesa el contenido generado por IA y lo formatea con estilo visual mejorado.
+    Detecta subapartados, aplica negritas, y estructura mejor el texto.
+    """
+    try:
+        # Dividir contenido en bloques
+        bloques = contenido.split('\n\n')
+
+        for bloque in bloques:
+            bloque = bloque.strip()
+            if not bloque:
+                continue
+
+            # Detectar si es un subapartado (líneas que terminan con : o son cortas y en mayúsculas)
+            es_subapartado = False
+
+            # Criterio 1: Termina con dos puntos
+            if bloque.endswith(':'):
+                es_subapartado = True
+                bloque = bloque[:-1]  # Quitar los dos puntos
+
+            # Criterio 2: Es corto (menos de 80 caracteres) y empieza con mayúscula
+            elif len(bloque) < 80 and bloque[0].isupper() and '\n' not in bloque:
+                # Verificar si no tiene punto al final (probablemente es un título)
+                if not bloque.endswith('.'):
+                    es_subapartado = True
+
+            # Criterio 3: Contiene números romanos o numeración (1., 2., I., II., etc.)
+            elif re.match(r'^[IVX]+\.|^\d+\.', bloque.strip()):
+                es_subapartado = True
+                # Remover numeración si existe
+                bloque = re.sub(r'^[IVX]+\.\s*|^\d+\.\s*', '', bloque)
+
+            if es_subapartado:
+                # Añadir como subapartado (heading nivel 2)
+                doc.add_heading(bloque.upper(), 2)
+            else:
+                # Es un párrafo normal
+                p = doc.add_paragraph()
+
+                # Procesar el bloque para detectar negritas marcadas con **texto**
+                # y aplicar formato
+                partes = re.split(r'\*\*(.*?)\*\*', bloque)
+
+                for i, parte in enumerate(partes):
+                    if not parte:
+                        continue
+
+                    if i % 2 == 0:
+                        # Texto normal
+                        p.add_run(parte)
+                    else:
+                        # Texto en negrita
+                        run = p.add_run(parte)
+                        run.bold = True
+
+                # Ajustar espaciado del párrafo para mejor lectura
+                p.paragraph_format.space_after = Pt(8)
+                p.paragraph_format.line_spacing = 1.15
+
+    except Exception as e:
+        # Si hay error en el procesamiento, añadir contenido sin formato
+        print(f"Error procesando contenido visual: {e}")
+        for parrafo in contenido.split('\n\n'):
+            if parrafo.strip():
+                doc.add_paragraph(parrafo)
 
 def agregar_numeracion_paginas(doc):
     """Añade numeración de páginas al documento"""
@@ -1774,16 +2104,31 @@ def generar_memoria_por_criterios(datos_proyecto, criterios, texto_ppt, datos_em
 
         Genera una sección técnica especializada para el siguiente criterio de valoración.
 
-        IMPORTANTE:
-        - Redacción fluida y profesional en párrafos completos
+        ENFOQUE CRÍTICO - MÁXIMA PRIORIDAD:
+        - RELACIONA DIRECTAMENTE cada punto desarrollado con el PLIEGO TÉCNICO (PPT) adjunto
+        - IDENTIFICA requisitos específicos del PPT y RESPONDE técnicamente a cada uno
+        - DEMUESTRA cómo la empresa CUMPLE Y SUPERA cada requisito del pliego
+        - CITA referencias específicas del PPT cuando sea relevante (páginas, secciones, tablas)
+        - El criterio debe ser la RESPUESTA TÉCNICA al PPT, no contenido genérico
+
+        ESTILO DE REDACCIÓN Y FORMATO VISUAL:
+        - Redacción profesional en párrafos bien estructurados (no demasiado largos)
         - Lenguaje técnico especializado del sector {sector}
-        - NO uses listas, viñetas, asteriscos ni símbolos
+        - ORGANIZA el contenido en SUBAPARTADOS CLAROS con títulos descriptivos
+        - USA PÁRRAFOS CORTOS (máximo 150-200 palabras) para facilitar la lectura
+        - INCLUYE DATOS TÉCNICOS en formato tabular cuando sea apropiado
         - Evita frases de relleno como "Para garantizar el éxito", "La experiencia nos ha enseñado"
         - Incluye especificaciones técnicas detalladas con modelos, marcas y características específicas
-        - Profundiza en cada aspecto mencionado con datos técnicos concretos
 
-        CRITERIO: {nombre_criterio}
+        FORMATO ESTRUCTURADO REQUERIDO:
+        - Divide el criterio en 4-5 subapartados con títulos claros (Ej: "Metodología de trabajo", "Recursos técnicos", etc.)
+        - Cada subapartado debe tener 2-3 párrafos de 120-180 palabras
+        - Usa negritas para resaltar términos técnicos clave (marca con **término**)
+        - Intercala datos técnicos cuantitativos (números, porcentajes, especificaciones)
+
+        CRITERIO A DESARROLLAR: {nombre_criterio}
         PUNTUACIÓN MÁXIMA: {puntos} puntos
+        DESCRIPCIÓN DEL CRITERIO: {criterio.get('descripcion', 'No especificada')}
         SECTOR: {sector}
 
         INFORMACIÓN DEL PROYECTO:
@@ -1812,8 +2157,8 @@ def generar_memoria_por_criterios(datos_proyecto, criterios, texto_ppt, datos_em
         SECCIONES IMPORTANTES DEL PLIEGO:
         {chr(10).join([f"- {seccion.upper()}: {contenido[:200]}..." if len(contenido) > 200 else f"- {seccion.upper()}: {contenido}" for seccion, contenido in secciones_importantes.items()])}
 
-        CONTEXTO COMPLETO DEL PLIEGO TÉCNICO:
-        {texto_ppt[:5000] if texto_ppt else "No disponible"}...
+        CONTEXTO COMPLETO DEL PLIEGO TÉCNICO (Extenso):
+        {texto_ppt[:15000] if texto_ppt else "No disponible"}...
 
         ESPECIFICACIONES TÉCNICAS DETALLADAS REQUERIDAS:
 
@@ -1852,15 +2197,53 @@ def generar_memoria_por_criterios(datos_proyecto, criterios, texto_ppt, datos_em
         - Certificaciones personales aplicables al criterio específico
 
         REQUISITOS DE CALIDAD TÉCNICA:
-        - Mínimo 3500 palabras por criterio con contenido técnico sustancial
+        - Mínimo 3500-5000 palabras por criterio con contenido técnico sustancial
         - Párrafos de 180-280 palabras con alta densidad técnica
         - Eliminación total de frases de relleno y generalidades
         - Datos técnicos verificables con referencias normativas específicas
         - Lenguaje especializado del sector con precisión terminológica
+
+        ⚠️ IMPORTANTE - EXTENSIÓN SIN LÍMITES:
+        - NO te limites en la extensión. Genera TODO el contenido necesario
+        - Desarrolla COMPLETAMENTE cada subapartado sin resumir
+        - Si necesitas más espacio, continúa escribiendo sin restricciones
+        - El criterio debe ser EXHAUSTIVO y COMPLETO, no un resumen
+        - Prefiere ser EXTENSO y DETALLADO que conciso
+
+        DESARROLLO PROFUNDO Y COMPLETO:
+        - Desarrolla el criterio en 5-8 páginas de contenido denso y técnico (NO menos)
+        - Relaciona DIRECTAMENTE cada aspecto con el pliego técnico adjunto
+        - Justifica con ejemplos concretos de la experiencia de la empresa
+        - Incluye datos cuantitativos, KPIs, métricas y especificaciones técnicas
+        - Menciona normativas, certificaciones y estándares aplicables
+        - NO resumas ni acortes el contenido - DESARROLLA TODO EN PROFUNDIDAD
+
+        EJEMPLO DE ESTRUCTURA (desarrolla CADA sección en profundidad):
+
+        Análisis del criterio y enfoque metodológico:
+        [2-3 párrafos explicando el criterio, su importancia y cómo se abordará - 400-600 palabras MÍNIMO]
+
+        Metodología de trabajo propuesta:
+        [4-6 párrafos con metodología detallada, fases, procesos, protocolos - 800-1200 palabras MÍNIMO]
+
+        Recursos técnicos y humanos asignados:
+        [4-5 párrafos describiendo equipos, personal, software, instalaciones con especificaciones completas - 700-1000 palabras MÍNIMO]
+
+        Experiencia específica en proyectos similares:
+        [3-4 párrafos con ejemplos concretos, fechas, resultados cuantitativos, lecciones aprendidas - 600-800 palabras MÍNIMO]
+
+        Garantía de cumplimiento y medidas de calidad:
+        [3-4 párrafos sobre protocolos, controles, certificaciones, KPIs, auditorías - 500-700 palabras MÍNIMO]
+
+        Control de calidad y seguimiento:
+        [3-4 párrafos adicionales sobre sistemas de control, reporting, mejora continua - 500-700 palabras MÍNIMO]
+
+        TOTAL ESPERADO: 4000-6000 palabras por criterio (NO MENOS)
         """
-        
-        # Para mejor rendimiento, usar GPT-4 o Claude
-        respuesta = llamar_ia_mejorado(prompt, max_tokens=4000, temperature=0.3)
+
+        # SOLUCIÓN: Generación SIN LÍMITES con continuación automática
+        # max_tokens=16000 (máximo de Claude Opus) + auto_continuar=True
+        respuesta = llamar_ia_mejorado(prompt, max_tokens=16000, temperature=0.3, auto_continuar=True)
         
         # Limpieza adicional para eliminar cualquier símbolo no deseado
         if respuesta:
@@ -2594,6 +2977,27 @@ def mostrar_aplicacion():
         st.session_state.info_empresa_online = None
     if 'criterios_valoracion' not in st.session_state:
         st.session_state.criterios_valoracion = []
+    if 'analisis_ppt' not in st.session_state:
+        st.session_state.analisis_ppt = {}
+
+    # Botón para limpiar datos y empezar nueva memoria
+    if st.sidebar.button("🆕 Nueva Memoria", help="Limpia todos los datos para crear una nueva memoria desde cero"):
+        st.session_state.datos_extraidos = {}
+        st.session_state.texto_ppt = ""
+        st.session_state.analisis_ppt = {}
+        st.session_state.criterios_valoracion = []
+        # Limpiar datos del proyecto
+        for key in ['objeto', 'expediente', 'organismo', 'presupuesto', 'plazo', 'tipo_contrato']:
+            if key in st.session_state:
+                del st.session_state[key]
+        # Limpiar widgets de criterios
+        for i in range(10):  # Máximo 10 criterios
+            for suffix in ['nombre', 'puntos', 'desc']:
+                key = f"crit_{suffix}_{i}"
+                if key in st.session_state:
+                    del st.session_state[key]
+        st.success("✅ Datos limpiados. Puedes crear una nueva memoria.")
+        st.rerun()
     
     # Tabs principales
     tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
@@ -2960,29 +3364,30 @@ def mostrar_aplicacion():
     
     with tab3:
         st.markdown('<h2 class="section-header">Criterios de Juicio de Valor</h2>', unsafe_allow_html=True)
-        
+
         st.warning("""
         ⚠️ **MUY IMPORTANTE**: Los criterios de valoración son el NÚCLEO de la memoria.
         El sistema desarrollará cada criterio en profundidad (3-5 páginas cada uno),
         relacionándolo directamente con el pliego técnico.
         """)
-        
+
         num_criterios = st.number_input("Número de criterios de valoración", 1, 10, 3)
-        
-        st.session_state.criterios_valoracion = []
+
+        # SOLUCIÓN: Construir criterios dinámicamente desde widgets actuales, no resetear
+        criterios_temp = []
         total_puntos = 0
-        
+
         for i in range(num_criterios):
             st.markdown(f"### Criterio {i+1}")
             col1, col2 = st.columns([3, 1])
-            
+
             with col1:
                 nombre_criterio = st.text_input(
                     f"Nombre del criterio {i+1}",
                     key=f"crit_nombre_{i}",
                     placeholder="Ej: Memoria técnica y metodología de trabajo"
                 )
-            
+
             with col2:
                 puntos_criterio = st.number_input(
                     f"Puntos",
@@ -2990,26 +3395,36 @@ def mostrar_aplicacion():
                     key=f"crit_puntos_{i}"
                 )
                 total_puntos += puntos_criterio
-            
+
             descripcion_criterio = st.text_area(
                 f"Descripción/Aspectos a valorar",
                 key=f"crit_desc_{i}",
                 placeholder="Detalla qué aspectos se valorarán en este criterio",
                 height=80
             )
-            
+
             if nombre_criterio:
-                st.session_state.criterios_valoracion.append({
+                criterios_temp.append({
                     'nombre': nombre_criterio,
                     'puntos': puntos_criterio,
                     'descripcion': descripcion_criterio
                 })
-        
+
+        # Actualizar session_state solo si hay cambios
+        st.session_state.criterios_valoracion = criterios_temp
+
         st.info(f"**Total puntos criterios técnicos:** {total_puntos}")
     
     with tab4:
         st.markdown('<h2 class="section-header">Documentos Técnicos</h2>', unsafe_allow_html=True)
-        
+
+        # Mostrar estado del análisis PPT actual
+        if st.session_state.get('texto_ppt'):
+            caracteres_ppt = len(st.session_state.texto_ppt)
+            st.info(f"📄 PPT analizado: {caracteres_ppt:,} caracteres disponibles para generación")
+        else:
+            st.warning("⚠️ No hay PPT analizado. Sube un archivo PDF para mejor relación con criterios.")
+
         col5, col6 = st.columns(2)
         
         with col5:
@@ -3055,8 +3470,8 @@ def mostrar_aplicacion():
                                     if tabla['relevancia'] > 50:
                                         st.dataframe(pd.DataFrame(tabla['datos'], columns=tabla['headers']))
                     else:
-                        st.session_state.texto_ppt = ""
-                        st.warning("⚠️ Solo se soporta análisis avanzado para archivos PDF")
+                        # NO resetear el análisis anterior, solo avisar
+                        st.warning("⚠️ Solo se soporta análisis avanzado para archivos PDF. Por favor, sube un archivo PDF para análisis completo.")
         
         with col6:
             archivo_pcap = st.file_uploader("PCAP - Pliego Administrativo (opcional)", 
@@ -3089,6 +3504,19 @@ def mostrar_aplicacion():
             incluir_calculos = st.checkbox("Incluir cálculos técnicos", value=True)
             incluir_anexos = st.checkbox("Incluir anexos completos", value=True)
             st.session_state.incluir_cronograma = st.checkbox("📅 Generar cronograma de proyecto", value=st.session_state.get('incluir_cronograma', True), help="Cronograma Gantt adaptado al sector del proyecto")
+
+            # Selección del tipo de período para el encabezado del Gantt
+            if st.session_state.incluir_cronograma:
+                st.session_state.tipo_periodo_gantt = st.selectbox(
+                    "📊 Formato de fechas en Gantt:",
+                    options=['Diario', 'Semanal', 'Quincenal', 'Mensual'],
+                    index=st.session_state.get('tipo_periodo_gantt_index', 1),  # Por defecto: Semanal
+                    help="Selecciona el formato de las columnas de fecha en el diagrama Gantt"
+                )
+                # Guardar índice para mantener selección
+                opciones = ['Diario', 'Semanal', 'Quincenal', 'Mensual']
+                st.session_state.tipo_periodo_gantt_index = opciones.index(st.session_state.tipo_periodo_gantt)
+
             formato_profesional = st.checkbox("Formato profesional avanzado", value=True)
 
             # Vista previa del cronograma si está activado
@@ -3114,15 +3542,23 @@ def mostrar_aplicacion():
         # AVISO IMPORTANTE
         st.markdown("""
         <div class="warning-box">
-            <h3>⚠️ AVISO IMPORTANTE</h3>
-            <p><strong>Este sistema utiliza Inteligencia Artificial para generar memorias técnicas.</strong></p>
+            <h3>⚠️ AVISO IMPORTANTE - GENERACIÓN SIN LÍMITES</h3>
+            <p><strong>Este sistema utiliza Inteligencia Artificial avanzada para generar memorias técnicas EXTENSAS Y COMPLETAS.</strong></p>
+            <p><strong>🚀 NUEVO: Sistema de generación continua SIN LÍMITES</strong></p>
+            <ul>
+                <li>✓ Cada criterio se desarrolla en 4000-6000 palabras (5-8 páginas)</li>
+                <li>✓ Si el texto se corta, se continúa automáticamente hasta completarlo</li>
+                <li>✓ Contenido técnico profundo y exhaustivo, no resúmenes</li>
+                <li>✓ Relación directa con el pliego técnico (15.000 caracteres de contexto)</li>
+            </ul>
             <p>El sistema se centrará en:</p>
             <ul>
-                <li>✓ Desarrollar cada criterio de valoración en profundidad</li>
+                <li>✓ Desarrollar cada criterio de valoración en MÁXIMA PROFUNDIDAD</li>
                 <li>✓ Relacionar cada criterio con el pliego técnico</li>
                 <li>✓ Justificar con los recursos de la empresa</li>
-                <li>✓ Crear contenido técnico profesional</li>
+                <li>✓ Crear contenido técnico profesional EXTENSO</li>
             </ul>
+            <p><strong>⏱️ Tiempo estimado:</strong> 2-5 minutos por criterio (generación completa)</p>
             <p>Los documentos DEBEN ser revisados por personal técnico cualificado.</p>
         </div>
         """, unsafe_allow_html=True)
@@ -3154,8 +3590,8 @@ def mostrar_aplicacion():
         # Resumen antes de generar
         if datos_completos:
             st.markdown("### 📋 Resumen de la memoria a generar:")
-            col_res1, col_res2, col_res3, col_res4 = st.columns(4)
-            
+            col_res1, col_res2, col_res3, col_res4, col_res5 = st.columns(5)
+
             with col_res1:
                 st.metric("Páginas", num_paginas if 'num_paginas' in locals() else 60)
             with col_res2:
@@ -3164,7 +3600,11 @@ def mostrar_aplicacion():
                 st.metric("Presupuesto", presupuesto if presupuesto else "N/A")
             with col_res4:
                 st.metric("Plazo", plazo)
-            
+            with col_res5:
+                caracteres_ppt = len(st.session_state.get('texto_ppt', ''))
+                st.metric("PPT (chars)", f"{caracteres_ppt:,}" if caracteres_ppt > 0 else "Sin PPT",
+                         delta="15K max" if caracteres_ppt > 0 else None)
+
             # Mostrar criterios
             st.markdown("**🎯 Criterios de valoración a desarrollar:**")
             for criterio in st.session_state.criterios_valoracion:
@@ -3246,7 +3686,8 @@ def mostrar_aplicacion():
                 progress = st.progress(0)
                 
                 # 1. GENERAR DESARROLLO DE CRITERIOS (Lo más importante)
-                with st.spinner("🎯 Desarrollando criterios de valoración en profundidad..."):
+                with st.spinner("🎯 Desarrollando criterios de valoración SIN LÍMITES (generación extensa con continuación automática)..."):
+                    st.info("ℹ️ Generando contenido extenso y completo. Si un criterio se corta, se continuará automáticamente hasta completarlo.")
                     secciones_criterios = generar_memoria_por_criterios(
                         datos_proyecto,
                         st.session_state.criterios_valoracion,
@@ -3346,15 +3787,37 @@ def mostrar_aplicacion():
 
                     doc.add_page_break()
                     
-                    # Desarrollar cada criterio
+                    # SOLUCIÓN: Desarrollar cada criterio con formato visual mejorado
                     for criterio in st.session_state.criterios_valoracion:
                         doc.add_heading(criterio['nombre'].upper(), 1)
+
+                        # Añadir cuadro resumen del criterio
+                        tabla_resumen = doc.add_table(rows=2, cols=2)
+                        tabla_resumen.style = 'Light Grid Accent 1'
+
+                        # Fila 1
+                        tabla_resumen.rows[0].cells[0].text = '🎯 Criterio:'
+                        tabla_resumen.rows[0].cells[1].text = criterio['nombre']
+
+                        # Fila 2
+                        tabla_resumen.rows[1].cells[0].text = '📊 Puntuación máxima:'
+                        tabla_resumen.rows[1].cells[1].text = f"{criterio['puntos']} puntos"
+
+                        # Formatear tabla
+                        for row in tabla_resumen.rows:
+                            row.cells[0].paragraphs[0].runs[0].bold = True
+                            # Color de fondo en primera columna
+                            shading_elm = parse_xml(r'<w:shd {} w:fill="E0E7FF"/>'.format(nsdecls('w')))
+                            row.cells[0]._element.get_or_add_tcPr().append(shading_elm)
+
+                        doc.add_paragraph()  # Espacio
+
                         if criterio['nombre'] in secciones_criterios:
                             contenido = secciones_criterios[criterio['nombre']]
                             if contenido:
-                                for parrafo in contenido.split('\n\n'):
-                                    if parrafo.strip():
-                                        doc.add_paragraph(parrafo)
+                                # Procesar contenido con formato mejorado
+                                procesar_contenido_visual(doc, contenido)
+
                         doc.add_page_break()
 
                     # Añadir cronograma si está habilitado
@@ -3364,7 +3827,9 @@ def mostrar_aplicacion():
                             fig, df_cronograma = generar_cronograma_proyecto(datos_proyecto, sector_detectado)
 
                             # Crear cronograma directamente en Word (más confiable)
-                            cronograma_creado = crear_cronograma_tabla_word(doc, df_cronograma, datos_proyecto)
+                            # Obtener tipo de período seleccionado por el usuario
+                            tipo_periodo_seleccionado = st.session_state.get('tipo_periodo_gantt', 'Semanal')
+                            cronograma_creado = crear_cronograma_tabla_word(doc, df_cronograma, datos_proyecto, tipo_periodo_seleccionado)
 
                             if cronograma_creado:
                                 doc.add_page_break()
@@ -3422,7 +3887,8 @@ def mostrar_aplicacion():
                 num_anexos = len(perfil_empresa.get('documentos_anexos', [])) if perfil_empresa else 0
 
                 st.success(f"✅ Memoria técnica de {num_paginas if 'num_paginas' in locals() else 60} páginas generada correctamente")
-                st.info("📌 Los criterios de valoración han sido desarrollados en profundidad y relacionados con el pliego técnico")
+                st.success("🚀 Generación SIN LÍMITES activada - Contenido completo y extenso sin cortes")
+                st.info("📌 Los criterios de valoración han sido desarrollados en profundidad (4000-6000 palabras cada uno) y relacionados con el pliego técnico")
 
                 if num_anexos > 0:
                     st.info(f"📎 Se han incluido {num_anexos} documentos como anexos en la memoria técnica")

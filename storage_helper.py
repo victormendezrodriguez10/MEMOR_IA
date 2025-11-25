@@ -1,44 +1,35 @@
 """
 storage_helper.py
-Módulo de gestión de archivos en Cloudinary
+Módulo de gestión de archivos local (versión SQLite)
 Maneja subida de logos y documentos para MEMOR.IA
 """
 
-import cloudinary
-import cloudinary.uploader
-import cloudinary.api
 import os
+import shutil
+from pathlib import Path
 import streamlit as st
-from io import BytesIO
 
-# Inicializar Cloudinary
+# Directorios para almacenamiento local
+LOGOS_DIR = "logos_usuarios"
+DOCS_DIR = "documentos_usuarios"
+
 def init_cloudinary():
-    """Inicializa la configuración de Cloudinary"""
+    """Función de compatibilidad con versión Cloudinary"""
+    return init_storage()
+
+def init_storage():
+    """Inicializa los directorios de almacenamiento local"""
     try:
-        # Obtener credenciales de Cloudinary
-        cloud_name = os.getenv("CLOUDINARY_CLOUD_NAME") or st.secrets.get("CLOUDINARY_CLOUD_NAME")
-        api_key = os.getenv("CLOUDINARY_API_KEY") or st.secrets.get("CLOUDINARY_API_KEY")
-        api_secret = os.getenv("CLOUDINARY_API_SECRET") or st.secrets.get("CLOUDINARY_API_SECRET")
-
-        if not all([cloud_name, api_key, api_secret]):
-            st.warning("⚠️ Cloudinary no configurado. Los archivos no se guardarán.")
-            return False
-
-        cloudinary.config(
-            cloud_name=cloud_name,
-            api_key=api_key,
-            api_secret=api_secret,
-            secure=True
-        )
-
+        Path(LOGOS_DIR).mkdir(exist_ok=True)
+        Path(DOCS_DIR).mkdir(exist_ok=True)
         return True
     except Exception as e:
-        st.error(f"❌ Error al configurar Cloudinary: {e}")
+        st.error(f"❌ Error al crear directorios: {e}")
         return False
 
 def upload_logo(file_data, usuario_id, filename):
     """
-    Sube un logo a Cloudinary
+    Guarda un logo localmente
 
     Args:
         file_data: Archivo en bytes o UploadedFile de Streamlit
@@ -46,12 +37,19 @@ def upload_logo(file_data, usuario_id, filename):
         filename: Nombre del archivo
 
     Returns:
-        URL del logo subido o None si falla
+        Path del logo guardado o None si falla
     """
-    if not init_cloudinary():
+    if not init_storage():
         return None
 
     try:
+        # Crear directorio del usuario si no existe
+        user_dir = Path(LOGOS_DIR) / str(usuario_id)
+        user_dir.mkdir(exist_ok=True)
+
+        # Ruta completa del archivo
+        file_path = user_dir / filename
+
         # Si es un UploadedFile de Streamlit, obtener los bytes
         if hasattr(file_data, 'read'):
             file_bytes = file_data.read()
@@ -59,24 +57,19 @@ def upload_logo(file_data, usuario_id, filename):
         else:
             file_bytes = file_data
 
-        # Subir a Cloudinary en la carpeta "logos"
-        result = cloudinary.uploader.upload(
-            file_bytes,
-            folder=f"memoria_ia/logos",
-            public_id=f"usuario_{usuario_id}_{filename}",
-            resource_type="auto",
-            overwrite=True,
-            invalidate=True
-        )
+        # Guardar el archivo
+        with open(file_path, 'wb') as f:
+            f.write(file_bytes)
 
-        return result['secure_url']
+        # SOLUCIÓN: Retornar path absoluto para evitar problemas de carga
+        return str(file_path.absolute())
     except Exception as e:
-        st.error(f"❌ Error al subir logo: {e}")
+        st.error(f"❌ Error al guardar logo: {e}")
         return None
 
 def upload_document(file_data, usuario_id, filename):
     """
-    Sube un documento a Cloudinary
+    Guarda un documento localmente
 
     Args:
         file_data: Archivo en bytes o UploadedFile de Streamlit
@@ -84,12 +77,19 @@ def upload_document(file_data, usuario_id, filename):
         filename: Nombre del archivo
 
     Returns:
-        URL del documento subido o None si falla
+        Path del documento guardado o None si falla
     """
-    if not init_cloudinary():
+    if not init_storage():
         return None
 
     try:
+        # Crear directorio del usuario si no existe
+        user_dir = Path(DOCS_DIR) / str(usuario_id)
+        user_dir.mkdir(exist_ok=True)
+
+        # Ruta completa del archivo
+        file_path = user_dir / filename
+
         # Si es un UploadedFile de Streamlit, obtener los bytes
         if hasattr(file_data, 'read'):
             file_bytes = file_data.read()
@@ -97,62 +97,38 @@ def upload_document(file_data, usuario_id, filename):
         else:
             file_bytes = file_data
 
-        # Subir a Cloudinary en la carpeta "documentos"
-        result = cloudinary.uploader.upload(
-            file_bytes,
-            folder=f"memoria_ia/documentos",
-            public_id=f"usuario_{usuario_id}_{filename}",
-            resource_type="auto",
-            overwrite=True,
-            invalidate=True
-        )
+        # Guardar el archivo
+        with open(file_path, 'wb') as f:
+            f.write(file_bytes)
 
-        return result['secure_url']
+        # SOLUCIÓN: Retornar path absoluto para evitar problemas de carga
+        return str(file_path.absolute())
     except Exception as e:
-        st.error(f"❌ Error al subir documento: {e}")
+        st.error(f"❌ Error al guardar documento: {e}")
         return None
 
-def delete_file(url):
+def delete_file(file_path):
     """
-    Elimina un archivo de Cloudinary
+    Elimina un archivo local
 
     Args:
-        url: URL completa del archivo en Cloudinary
+        file_path: Path del archivo
 
     Returns:
         True si se eliminó, False si falla
     """
-    if not init_cloudinary():
-        return False
-
     try:
-        # Extraer public_id de la URL
-        # Ejemplo: https://res.cloudinary.com/cloud/image/upload/v123/folder/file.jpg
-        # public_id sería: folder/file
-        parts = url.split('/')
-        version_index = next((i for i, part in enumerate(parts) if part.startswith('v')), None)
-
-        if version_index is None:
-            return False
-
-        # El public_id está después de la versión
-        public_id_parts = parts[version_index + 1:]
-        public_id = '/'.join(public_id_parts)
-
-        # Quitar la extensión
-        public_id = public_id.rsplit('.', 1)[0]
-
-        # Eliminar el archivo
-        result = cloudinary.uploader.destroy(public_id)
-
-        return result.get('result') == 'ok'
+        if os.path.exists(file_path):
+            os.remove(file_path)
+            return True
+        return False
     except Exception as e:
         st.warning(f"⚠️ No se pudo eliminar el archivo: {e}")
         return False
 
 def get_file_url(folder, usuario_id, filename):
     """
-    Obtiene la URL de un archivo en Cloudinary
+    Obtiene la ruta de un archivo local
 
     Args:
         folder: "logos" o "documentos"
@@ -160,19 +136,15 @@ def get_file_url(folder, usuario_id, filename):
         filename: Nombre del archivo
 
     Returns:
-        URL del archivo o None
+        Path del archivo o None
     """
-    if not init_cloudinary():
-        return None
-
     try:
-        public_id = f"memoria_ia/{folder}/usuario_{usuario_id}_{filename}"
+        base_dir = LOGOS_DIR if folder == "logos" else DOCS_DIR
+        file_path = Path(base_dir) / str(usuario_id) / filename
 
-        # Verificar si existe
-        result = cloudinary.api.resource(public_id)
-
-        return result.get('secure_url')
-    except cloudinary.exceptions.NotFound:
+        if file_path.exists():
+            # SOLUCIÓN: Retornar path absoluto
+            return str(file_path.absolute())
         return None
     except Exception as e:
         st.warning(f"⚠️ Error al obtener archivo: {e}")
@@ -187,20 +159,20 @@ def list_user_files(usuario_id, folder="logos"):
         folder: "logos" o "documentos"
 
     Returns:
-        Lista de URLs o lista vacía
+        Lista de paths o lista vacía
     """
-    if not init_cloudinary():
-        return []
-
     try:
-        # Buscar archivos en la carpeta del usuario
-        result = cloudinary.api.resources(
-            type="upload",
-            prefix=f"memoria_ia/{folder}/usuario_{usuario_id}_",
-            max_results=100
-        )
+        base_dir = LOGOS_DIR if folder == "logos" else DOCS_DIR
+        user_dir = Path(base_dir) / str(usuario_id)
 
-        return [resource['secure_url'] for resource in result.get('resources', [])]
+        if not user_dir.exists():
+            return []
+
+        files = [str(f) for f in user_dir.iterdir() if f.is_file()]
+        return files
     except Exception as e:
         st.warning(f"⚠️ Error al listar archivos: {e}")
         return []
+
+# Inicializar almacenamiento al importar
+init_storage()
