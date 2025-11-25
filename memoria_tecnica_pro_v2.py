@@ -288,26 +288,24 @@ def init_database():
         # Crear usuarios por defecto si no existen
         from db_helper import get_db_connection
         with get_db_connection() as conn:
-            with conn.cursor() as cursor:
-                # Usuario administrador por defecto
-                cursor.execute('''
-                    INSERT INTO usuarios
-                    (email, password, nombre, empresa, rol, activo)
-                    VALUES (%s, %s, %s, %s, %s, %s)
-                    ON CONFLICT (email) DO NOTHING
-                ''', ("vmendez@oclem.com", hashlib.sha256("favorito1998".encode()).hexdigest(),
-                      "Víctor Méndez", "OCLEM", "Administrador", True))
+            cursor = conn.cursor()
+            # Usuario administrador por defecto
+            cursor.execute('''
+                INSERT INTO usuarios
+                (email, password, nombre, empresa, rol, activo)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                ON CONFLICT (email) DO NOTHING
+            ''', ("vmendez@oclem.com", hashlib.sha256("favorito1998".encode()).hexdigest(),
+                  "Víctor Méndez", "OCLEM", "Administrador", True))
 
-                # Usuario demo
-                cursor.execute('''
-                    INSERT INTO usuarios
-                    (email, password, nombre, empresa, rol, activo)
-                    VALUES (%s, %s, %s, %s, %s, %s)
-                    ON CONFLICT (email) DO NOTHING
-                ''', ("demo@demo.com", hashlib.sha256("demo123".encode()).hexdigest(),
-                      "Usuario Demo", "Empresa Demo", "Usuario", True))
-
-                conn.commit()
+            # Usuario demo
+            cursor.execute('''
+                INSERT INTO usuarios
+                (email, password, nombre, empresa, rol, activo)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                ON CONFLICT (email) DO NOTHING
+            ''', ("demo@demo.com", hashlib.sha256("demo123".encode()).hexdigest(),
+                  "Usuario Demo", "Empresa Demo", "Usuario", True))
     except Exception as e:
         st.error(f"❌ Error al inicializar: {e}")
 
@@ -465,17 +463,17 @@ def mostrar_recuperacion():
                         st.error("❌ La contraseña debe tener al menos 6 caracteres")
                     else:
                         # Buscar token completo
-                        # MIGRADO A POSTGRESQL - usar get_db_connection() o funciones de db_functions.py
-                        cursor = conn.cursor()
-                        cursor.execute('''
-                            SELECT token FROM tokens_recuperacion
-                            WHERE email = ? AND token LIKE ? AND usado = 0
-                            AND datetime(fecha_creacion) > datetime('now', '-1 hour')
-                        ''', (st.session_state.recovery_email, codigo.upper() + '%'))
-                        token_completo = cursor.fetchone()
-                        conn.close()
+                        # MIGRADO A SQLite - usar get_db_connection()
+                        with get_db_connection() as conn:
+                            cursor = conn.cursor()
+                            cursor.execute('''
+                                SELECT token FROM tokens_recuperacion
+                                WHERE email = %s AND token LIKE %s AND usado = FALSE
+                                AND fecha_creacion > NOW() - INTERVAL '1 hour'
+                            ''', (st.session_state.recovery_email, codigo.upper() + '%'))
+                            token_completo = cursor.fetchone()
 
-                        if token_completo and cambiar_password(st.session_state.recovery_email, nueva_password, token_completo[0]):
+                        if token_completo and cambiar_password(st.session_state.recovery_email, nueva_password, token_completo['token'] if isinstance(token_completo, dict) else token_completo[0]):
                             st.success("✅ Contraseña cambiada correctamente")
                             st.balloons()
                             st.session_state.recovery_step = 1
@@ -2385,13 +2383,12 @@ def mostrar_aplicacion_admin():
                         nuevo_estado = not row['activo']
                         if st.button(f"{'Desactivar' if row['activo'] else 'Activar'}",
                                    key=f"toggle_{row['id']}"):
-                            # MIGRADO A POSTGRESQL - usar get_db_connection() o funciones de db_functions.py
-                            cursor = conn.cursor()
-                            cursor.execute('''
-                                UPDATE usuarios SET activo = ? WHERE id = ?
-                            ''', (nuevo_estado, row['id']))
-                            conn.commit()
-                            conn.close()
+                            # MIGRADO A SQLite - usar get_db_connection()
+                            with get_db_connection() as conn:
+                                cursor = conn.cursor()
+                                cursor.execute('''
+                                    UPDATE usuarios SET activo = %s WHERE id = %s
+                                ''', (nuevo_estado, row['id']))
                             st.success(f"Usuario {'activado' if nuevo_estado else 'desactivado'}")
                             st.rerun()
 
@@ -2401,13 +2398,12 @@ def mostrar_aplicacion_admin():
                             nueva_pass = generar_password()
                             password_hash = hashlib.sha256(nueva_pass.encode()).hexdigest()
 
-                            # MIGRADO A POSTGRESQL - usar get_db_connection() o funciones de db_functions.py
-                            cursor = conn.cursor()
-                            cursor.execute('''
-                                UPDATE usuarios SET password = ? WHERE id = ?
-                            ''', (password_hash, row['id']))
-                            conn.commit()
-                            conn.close()
+                            # MIGRADO A SQLite - usar get_db_connection()
+                            with get_db_connection() as conn:
+                                cursor = conn.cursor()
+                                cursor.execute('''
+                                    UPDATE usuarios SET password = %s WHERE id = %s
+                                ''', (password_hash, row['id']))
 
                             # Enviar email
                             mensaje_html = f"""
@@ -2435,12 +2431,11 @@ def mostrar_aplicacion_admin():
                     with col_a3:
                         if st.button("🗑️ Eliminar", key=f"delete_{row['id']}"):
                             if st.session_state.get(f'confirm_delete_{row["id"]}', False):
-                                # MIGRADO A POSTGRESQL - usar get_db_connection() o funciones de db_functions.py
-                                cursor = conn.cursor()
-                                cursor.execute('DELETE FROM usuarios WHERE id = ?', (row['id'],))
-                                cursor.execute('DELETE FROM pagos WHERE usuario_id = ?', (row['id'],))
-                                conn.commit()
-                                conn.close()
+                                # MIGRADO A SQLite - usar get_db_connection()
+                                with get_db_connection() as conn:
+                                    cursor = conn.cursor()
+                                    cursor.execute('DELETE FROM usuarios WHERE id = %s', (row['id'],))
+                                    cursor.execute('DELETE FROM pagos WHERE usuario_id = %s', (row['id'],))
                                 st.success("Usuario eliminado")
                                 st.rerun()
                             else:
@@ -2500,13 +2495,12 @@ def mostrar_aplicacion_admin():
                     # Opciones de gestión de pagos
                     if row['estado'] == 'pendiente':
                         if st.button("Marcar como Pagado", key=f"mark_paid_{row['id']}"):
-                            # MIGRADO A POSTGRESQL - usar get_db_connection() o funciones de db_functions.py
-                            cursor = conn.cursor()
-                            cursor.execute('''
-                                UPDATE pagos SET estado = 'completado' WHERE id = ?
-                            ''', (row['id'],))
-                            conn.commit()
-                            conn.close()
+                            # MIGRADO A SQLite - usar get_db_connection()
+                            with get_db_connection() as conn:
+                                cursor = conn.cursor()
+                                cursor.execute('''
+                                    UPDATE pagos SET estado = 'completado' WHERE id = %s
+                                ''', (row['id'],))
                             st.success("Pago marcado como completado")
                             st.rerun()
         else:
@@ -3135,15 +3129,13 @@ def mostrar_aplicacion():
         
         # Validación - Necesitamos definir las variables aquí ya que no están en el scope de tab5
         # Obtener datos del usuario logueado desde la base de datos
-        # MIGRADO A POSTGRESQL - usar get_db_connection() o funciones de db_functions.py
-        cursor = conn.cursor()
-        cursor.execute('SELECT empresa, cif FROM usuarios WHERE email = ?', (st.session_state.user_email,))
-        datos_usuario = cursor.fetchone()
-        conn.close()
+        # MIGRADO A SQLite - usar get_db_connection() o funciones de db_functions.py
+        from db_functions import obtener_usuario
+        usuario_data = obtener_usuario(st.session_state.user_email)
 
         # Recuperar valores de los campos necesarios
-        razon_social = datos_usuario[0] if datos_usuario else st.session_state.user_data.get('empresa', '')
-        cif = datos_usuario[1] if datos_usuario else ''
+        razon_social = usuario_data.get('empresa', '') if usuario_data else st.session_state.user_data.get('empresa', '')
+        cif = usuario_data.get('cif', '') if usuario_data else ''
         objeto = st.session_state.get('objeto', '')
         expediente = st.session_state.get('expediente', '')
         organismo = st.session_state.get('organismo', '')
@@ -3223,17 +3215,13 @@ def mostrar_aplicacion():
                     st.stop()
 
                 # Obtener datos de usuario básicos
-                # MIGRADO A POSTGRESQL - usar get_db_connection() o funciones de db_functions.py
-                cursor = conn.cursor()
-                cursor.execute('SELECT nombre, empresa, cif FROM usuarios WHERE email = ?',
-                             (st.session_state.user_email,))
-                datos_usuario = cursor.fetchone()
-                conn.close()
+                # MIGRADO A SQLite - usar obtener_usuario
+                usuario_data = obtener_usuario(st.session_state.user_email)
 
                 # Preparar datos de empresa con perfil guardado
                 datos_empresa = {
-                    'razon_social': datos_usuario[1] if datos_usuario else '',
-                    'cif': datos_usuario[2] if datos_usuario else '',
+                    'razon_social': usuario_data.get('empresa', '') if usuario_data else '',
+                    'cif': usuario_data.get('cif', '') if usuario_data else '',
                     'sector': perfil_empresa['sector'],
                     'empleados': perfil_empresa['empleados'],
                     'experiencia': perfil_empresa['experiencia_anos'],
