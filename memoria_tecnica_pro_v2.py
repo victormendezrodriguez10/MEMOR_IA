@@ -1090,8 +1090,9 @@ def llamar_ia_mejorado(prompt, max_tokens=3000, temperature=0.3, auto_continuar=
 
             respuesta_completa = ""
             for i, parte in enumerate(partes):
-                print(f"DEBUG IA: Procesando parte {i+1}/{len(partes)}")
-                response = anthropic_client.messages.create(
+                print(f"DEBUG IA: Procesando parte {i+1}/{len(partes)} con streaming...")
+                parte_respuesta = ""
+                with anthropic_client.messages.stream(
                     model=modelo_a_usar,
                     max_tokens=max_tokens,
                     temperature=temperature,
@@ -1099,12 +1100,18 @@ def llamar_ia_mejorado(prompt, max_tokens=3000, temperature=0.3, auto_continuar=
                     messages=[
                         {"role": "user", "content": parte}
                     ]
-                )
-                respuesta_completa += response.content[0].text + "\n\n"
+                ) as stream:
+                    for text in stream.text_stream:
+                        parte_respuesta += text
+                respuesta_completa += parte_respuesta + "\n\n"
             return respuesta_completa
         else:
-            print("DEBUG IA: Enviando prompt a Claude...")
-            response = anthropic_client.messages.create(
+            print("DEBUG IA: Enviando prompt a Claude con streaming...")
+            # Usar streaming para evitar timeout de 10 minutos en operaciones largas
+            respuesta_inicial = ""
+            stop_reason = None
+
+            with anthropic_client.messages.stream(
                 model=modelo_a_usar,
                 max_tokens=max_tokens,
                 temperature=temperature,
@@ -1112,9 +1119,21 @@ def llamar_ia_mejorado(prompt, max_tokens=3000, temperature=0.3, auto_continuar=
                 messages=[
                     {"role": "user", "content": prompt}
                 ]
-            )
-            print("DEBUG IA: Respuesta recibida exitosamente")
-            respuesta_inicial = response.content[0].text
+            ) as stream:
+                for text in stream.text_stream:
+                    respuesta_inicial += text
+                # Obtener stop_reason después del stream
+                final_message = stream.get_final_message()
+                stop_reason = final_message.stop_reason
+
+            print("DEBUG IA: Respuesta recibida exitosamente con streaming")
+
+            # Crear un objeto response simulado para mantener compatibilidad con el código existente
+            class ResponseSimulado:
+                def __init__(self, stop_reason):
+                    self.stop_reason = stop_reason
+
+            response = ResponseSimulado(stop_reason)
 
             # SOLUCIÓN: Sistema de continuación automática para evitar cortes
             if auto_continuar:
@@ -1153,7 +1172,9 @@ INSTRUCCIONES:
 - Finaliza con un cierre apropiado de la sección
 """
 
-                    response = anthropic_client.messages.create(
+                    # Usar streaming también para continuaciones
+                    continuacion = ""
+                    with anthropic_client.messages.stream(
                         model=modelo_a_usar,
                         max_tokens=max_tokens,
                         temperature=temperature,
@@ -1161,9 +1182,14 @@ INSTRUCCIONES:
                         messages=[
                             {"role": "user", "content": prompt_continuacion}
                         ]
-                    )
+                    ) as stream:
+                        for text in stream.text_stream:
+                            continuacion += text
+                        # Actualizar stop_reason para la siguiente iteración
+                        final_message = stream.get_final_message()
+                        response = ResponseSimulado(final_message.stop_reason)
 
-                    continuacion = response.content[0].text.strip()
+                    continuacion = continuacion.strip()
 
                     # Limpiar la continuación (eliminar frases de inicio redundantes)
                     continuacion = re.sub(r'^(Continuación|Siguiendo|Continuando|A continuación)[:\.]?\s*', '', continuacion, flags=re.IGNORECASE)
@@ -2158,7 +2184,7 @@ def generar_memoria_por_criterios(datos_proyecto, criterios, texto_ppt, datos_em
         {chr(10).join([f"- {seccion.upper()}: {contenido[:200]}..." if len(contenido) > 200 else f"- {seccion.upper()}: {contenido}" for seccion, contenido in secciones_importantes.items()])}
 
         CONTEXTO COMPLETO DEL PLIEGO TÉCNICO (Extenso - Máximo contexto):
-        {texto_ppt[:200000] if texto_ppt else "No disponible"}...
+        {texto_ppt[:100000] if texto_ppt else "No disponible"}...
 
         ESPECIFICACIONES TÉCNICAS DETALLADAS REQUERIDAS:
 
