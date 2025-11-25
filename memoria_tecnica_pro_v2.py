@@ -2157,8 +2157,8 @@ def generar_memoria_por_criterios(datos_proyecto, criterios, texto_ppt, datos_em
         SECCIONES IMPORTANTES DEL PLIEGO:
         {chr(10).join([f"- {seccion.upper()}: {contenido[:200]}..." if len(contenido) > 200 else f"- {seccion.upper()}: {contenido}" for seccion, contenido in secciones_importantes.items()])}
 
-        CONTEXTO COMPLETO DEL PLIEGO TÉCNICO (Extenso):
-        {texto_ppt[:15000] if texto_ppt else "No disponible"}...
+        CONTEXTO COMPLETO DEL PLIEGO TÉCNICO (Extenso - Máximo contexto):
+        {texto_ppt[:200000] if texto_ppt else "No disponible"}...
 
         ESPECIFICACIONES TÉCNICAS DETALLADAS REQUERIDAS:
 
