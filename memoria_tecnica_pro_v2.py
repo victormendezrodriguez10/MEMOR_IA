@@ -1239,13 +1239,22 @@ def detectar_sector_proyecto(objeto, texto_ppt):
 def get_rol_profesional(sector):
     """Devuelve el rol profesional correspondiente al sector"""
     roles = {
-        'construccion': 'Ingeniero de Caminos, Canales y Puertos especializado en construcción',
-        'electricidad': 'Ingeniero Eléctrico especializado en instalaciones',
-        'software': 'Ingeniero en Informática especializado en desarrollo de software',
-        'mantenimiento': 'Técnico especialista en mantenimiento industrial',
-        'consultoría': 'Consultor senior especializado en gestión empresarial',
-        'suministros': 'Especialista en aprovisionamiento y logística',
-        'transporte': 'Especialista en logística y transporte',
+        'Construcción': 'Ingeniero de Caminos, Canales y Puertos especializado en construcción',
+        'Instalaciones Eléctricas': 'Ingeniero Eléctrico especializado en instalaciones eléctricas',
+        'Energía Fotovoltaica': 'Ingeniero especializado en energía solar y sistemas fotovoltaicos',
+        'Climatización y Ventilación': 'Ingeniero especializado en climatización, HVAC y eficiencia energética',
+        'Fontanería y Saneamiento': 'Ingeniero especializado en instalaciones hidráulicas y saneamiento',
+        'Ingeniería Civil': 'Ingeniero Civil especializado en infraestructuras',
+        'Consultoría Técnica': 'Consultor senior especializado en gestión técnica y empresarial',
+        'Servicios Industriales': 'Ingeniero Industrial especializado en servicios y procesos',
+        'Formación': 'Especialista en formación y desarrollo de competencias profesionales',
+        'Desarrollo de Software': 'Ingeniero en Informática especializado en desarrollo de software',
+        'Ingeniería y Arquitectura': 'Arquitecto e Ingeniero especializado en proyectos técnicos',
+        'Limpieza y Jardinería': 'Técnico especialista en servicios de limpieza y mantenimiento de zonas verdes',
+        'Suministros': 'Especialista en aprovisionamiento, logística y gestión de suministros',
+        'Consultoría de Software': 'Consultor especializado en soluciones de software y transformación digital',
+        'Ciberseguridad': 'Ingeniero especializado en ciberseguridad, protección de datos y seguridad informática',
+        'Estudio de Datos': 'Científico de datos especializado en análisis, Big Data e inteligencia de negocio',
         'general': 'Profesional especializado en licitaciones públicas'
     }
     return roles.get(sector, roles['general'])
@@ -2410,7 +2419,7 @@ def generar_memoria_por_criterios(datos_proyecto, criterios, texto_ppt, datos_em
 
     # Obtener análisis avanzado si está disponible
     analisis_ppt = st.session_state.get('analisis_ppt', {})
-    sector = detectar_sector_proyecto(datos_proyecto.get('objeto', ''), texto_ppt)
+    sector = datos_empresa.get('sector', 'general')  # Usar sector seleccionado por usuario
 
     # Información adicional del análisis avanzado
     requisitos_tecnicos = analisis_ppt.get('requisitos_tecnicos', [])
@@ -2456,14 +2465,30 @@ def generar_memoria_por_criterios(datos_proyecto, criterios, texto_ppt, datos_em
         DESCRIPCIÓN DEL CRITERIO: {criterio.get('descripcion', 'No especificada')}
         SECTOR: {sector}
 
-        INFORMACIÓN DEL PROYECTO:
+        INFORMACIÓN COMPLETA DEL PROYECTO:
         Objeto: {datos_proyecto.get('objeto')}
         Presupuesto: {datos_proyecto.get('presupuesto')} €
         Plazo: {datos_proyecto.get('plazo')}
+        Expediente: {datos_proyecto.get('expediente')}
+        Organismo contratante: {datos_proyecto.get('organismo')}
+        Tipo de contrato: {datos_proyecto.get('tipo_contrato')}
 
-        INFORMACIÓN DE LA EMPRESA:
+        INFORMACIÓN COMPLETA DE LA EMPRESA:
+        Razón social: {datos_empresa.get('razon_social')}
+        CIF: {datos_empresa.get('cif')}
+        Número de empleados: {datos_empresa.get('empleados')}
         Experiencia: {datos_empresa.get('experiencia')} años
         Certificaciones: {', '.join(datos_empresa.get('certificaciones', []))}
+        Otras certificaciones: {datos_empresa.get('otras_certificaciones', '')}
+
+        EXPERIENCIA EN PROYECTOS SIMILARES:
+        {datos_empresa.get('experiencia_similar', 'No especificada')}
+
+        MEDIOS MATERIALES DE LA EMPRESA:
+        {datos_empresa.get('medios_materiales', 'No especificados')}
+
+        HERRAMIENTAS Y SOFTWARE DISPONIBLES:
+        {datos_empresa.get('herramientas_software', 'No especificadas')}
 
         PERSONAL TÉCNICO ASIGNADO:
         {generar_resumen_personal_tecnico(datos_empresa.get('equipo_tecnico', []))}
@@ -2483,7 +2508,7 @@ def generar_memoria_por_criterios(datos_proyecto, criterios, texto_ppt, datos_em
         {chr(10).join([f"- {seccion.upper()}: {contenido[:200]}..." if len(contenido) > 200 else f"- {seccion.upper()}: {contenido}" for seccion, contenido in secciones_importantes.items()])}
 
         CONTEXTO COMPLETO DEL PLIEGO TÉCNICO (Extenso - Máximo contexto):
-        {texto_ppt[:100000] if texto_ppt else "No disponible"}...
+        {texto_ppt[:500000] if texto_ppt else "No disponible"}...
 
         ESPECIFICACIONES TÉCNICAS DETALLADAS REQUERIDAS:
 
@@ -2570,7 +2595,7 @@ def generar_memoria_por_criterios(datos_proyecto, criterios, texto_ppt, datos_em
         # Ajustar generación según extensión seleccionada
         # Para memorias cortas (≤3 págs/criterio), desactivar auto-continuación
         # Para memorias largas, mantener auto-continuación activada
-        auto_cont = paginas_por_criterio > 3
+        auto_cont = True  # Siempre activo para evitar textos cortados
         print(f"DEBUG: Generando criterio '{nombre_criterio}' con {tokens_por_criterio} tokens, auto_continuar={auto_cont}")
         respuesta = llamar_ia_mejorado(prompt, max_tokens=tokens_por_criterio, temperature=0.3, auto_continuar=auto_cont)
         
@@ -3357,19 +3382,19 @@ def mostrar_aplicacion():
                     "Climatización y Ventilación", "Fontanería y Saneamiento",
                     "Ingeniería Civil", "Consultoría Técnica", "Servicios Industriales",
                     "Formación", "Desarrollo de Software", "Ingeniería y Arquitectura",
-                    "Limpieza y Jardinería", "Suministros"
+                    "Limpieza y Jardinería", "Suministros", "Consultoría de Software", "Ciberseguridad", "Estudio de Datos"
                 ], index=0 if not perfil_actual else ([
                     "Construcción", "Instalaciones Eléctricas", "Energía Fotovoltaica",
                     "Climatización y Ventilación", "Fontanería y Saneamiento",
                     "Ingeniería Civil", "Consultoría Técnica", "Servicios Industriales",
                     "Formación", "Desarrollo de Software", "Ingeniería y Arquitectura",
-                    "Limpieza y Jardinería", "Suministros"
+                    "Limpieza y Jardinería", "Suministros", "Consultoría de Software", "Ciberseguridad", "Estudio de Datos"
                 ].index(perfil_actual['sector']) if perfil_actual['sector'] in [
                     "Construcción", "Instalaciones Eléctricas", "Energía Fotovoltaica",
                     "Climatización y Ventilación", "Fontanería y Saneamiento",
                     "Ingeniería Civil", "Consultoría Técnica", "Servicios Industriales",
                     "Formación", "Desarrollo de Software", "Ingeniería y Arquitectura",
-                    "Limpieza y Jardinería", "Suministros"
+                    "Limpieza y Jardinería", "Suministros", "Consultoría de Software", "Ciberseguridad", "Estudio de Datos"
                 ] else 0))
 
                 empleados = st.text_input("Número de empleados",
