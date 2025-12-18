@@ -1510,8 +1510,9 @@ def generar_cronograma_proyecto(datos_proyecto, sector='general'):
         meses = 12
 
     # Definir fases según sector
+    # Definir fases según sector (nombres del desplegable)
     fases_por_sector = {
-        'construccion': [
+        'Construcción': [
             ('Estudios previos y permisos', 0.15),
             ('Replanteo y preparación', 0.08),
             ('Movimiento de tierras', 0.12),
@@ -1520,7 +1521,7 @@ def generar_cronograma_proyecto(datos_proyecto, sector='general'):
             ('Acabados', 0.15),
             ('Entrega y documentación', 0.05)
         ],
-        'electricidad': [
+        'Instalaciones Eléctricas': [
             ('Proyecto ejecutivo y permisos', 0.15),
             ('Suministro de materiales', 0.10),
             ('Montaje de cuadros principales', 0.20),
@@ -1529,28 +1530,117 @@ def generar_cronograma_proyecto(datos_proyecto, sector='general'):
             ('Puesta en marcha', 0.08),
             ('Documentación final', 0.02)
         ],
-        'software': [
+        'Energía Fotovoltaica': [
+            ('Diseño y tramitaciones', 0.15),
+            ('Suministro de equipos', 0.15),
+            ('Instalación de estructuras', 0.15),
+            ('Montaje de paneles', 0.25),
+            ('Instalación eléctrica', 0.15),
+            ('Conexión y puesta en marcha', 0.10),
+            ('Legalización y documentación', 0.05)
+        ],
+        'Climatización y Ventilación': [
+            ('Proyecto y cálculos', 0.15),
+            ('Suministro de equipos', 0.15),
+            ('Instalación de conductos', 0.25),
+            ('Montaje de unidades', 0.20),
+            ('Conexionado y control', 0.15),
+            ('Puesta en marcha y ajustes', 0.10)
+        ],
+        'Fontanería y Saneamiento': [
+            ('Proyecto y replanteo', 0.10),
+            ('Suministro de materiales', 0.10),
+            ('Red de saneamiento', 0.25),
+            ('Red de fontanería', 0.25),
+            ('Aparatos sanitarios', 0.15),
+            ('Pruebas y certificación', 0.15)
+        ],
+        'Ingeniería Civil': [
+            ('Estudios y topografía', 0.15),
+            ('Tramitaciones y permisos', 0.10),
+            ('Movimiento de tierras', 0.20),
+            ('Ejecución de obra civil', 0.30),
+            ('Instalaciones auxiliares', 0.15),
+            ('Recepción y documentación', 0.10)
+        ],
+        'Consultoría Técnica': [
+            ('Análisis inicial y diagnóstico', 0.20),
+            ('Recopilación de información', 0.15),
+            ('Elaboración del estudio', 0.30),
+            ('Propuestas y recomendaciones', 0.20),
+            ('Informe final y presentación', 0.15)
+        ],
+        'Servicios Industriales': [
+            ('Planificación del servicio', 0.10),
+            ('Movilización de recursos', 0.10),
+            ('Ejecución del servicio', 0.50),
+            ('Control de calidad', 0.15),
+            ('Informes y cierre', 0.15)
+        ],
+        'Formación': [
+            ('Diseño del programa formativo', 0.20),
+            ('Preparación de materiales', 0.15),
+            ('Impartición de formación', 0.40),
+            ('Evaluación y seguimiento', 0.15),
+            ('Certificación y cierre', 0.10)
+        ],
+        'Desarrollo de Software': [
             ('Análisis de requisitos', 0.15),
             ('Diseño de arquitectura', 0.12),
-            ('Desarrollo frontend', 0.25),
-            ('Desarrollo backend', 0.25),
-            ('Pruebas y testing', 0.15),
-            ('Despliegue y configuración', 0.05),
-            ('Documentación y entrega', 0.03)
+            ('Desarrollo e implementación', 0.35),
+            ('Pruebas y testing', 0.20),
+            ('Despliegue y formación', 0.10),
+            ('Documentación y entrega', 0.08)
         ],
-        'mantenimiento': [
-            ('Planificación y programación', 0.10),
-            ('Mantenimiento preventivo', 0.40),
-            ('Mantenimiento correctivo', 0.25),
-            ('Inspecciones y auditorías', 0.15),
-            ('Informes y documentación', 0.10)
+        'Ingeniería y Arquitectura': [
+            ('Estudios previos', 0.15),
+            ('Anteproyecto', 0.15),
+            ('Proyecto básico', 0.25),
+            ('Proyecto de ejecución', 0.25),
+            ('Dirección facultativa', 0.15),
+            ('Documentación final', 0.05)
+        ],
+        'Limpieza y Jardinería': [
+            ('Planificación del servicio', 0.10),
+            ('Asignación de personal', 0.10),
+            ('Prestación del servicio', 0.55),
+            ('Supervisión y control', 0.15),
+            ('Informes periódicos', 0.10)
+        ],
+        'Suministros': [
+            ('Tramitación del pedido', 0.10),
+            ('Fabricación/preparación', 0.30),
+            ('Control de calidad', 0.15),
+            ('Logística y transporte', 0.20),
+            ('Entrega e instalación', 0.15),
+            ('Recepción y garantía', 0.10)
+        ],
+        'Consultoría de Software': [
+            ('Auditoría inicial', 0.20),
+            ('Análisis de necesidades', 0.20),
+            ('Propuesta de solución', 0.25),
+            ('Plan de implementación', 0.20),
+            ('Informe y recomendaciones', 0.15)
+        ],
+        'Ciberseguridad': [
+            ('Auditoría de seguridad', 0.20),
+            ('Análisis de vulnerabilidades', 0.20),
+            ('Implementación de medidas', 0.30),
+            ('Pruebas de penetración', 0.15),
+            ('Documentación y formación', 0.15)
+        ],
+        'Estudio de Datos': [
+            ('Recopilación de datos', 0.20),
+            ('Limpieza y preparación', 0.15),
+            ('Análisis exploratorio', 0.25),
+            ('Modelado y conclusiones', 0.25),
+            ('Informe y visualización', 0.15)
         ],
         'general': [
-            ('Planificación inicial', 0.10),
-            ('Fase de preparación', 0.15),
-            ('Ejecución principal', 0.50),
-            ('Control y seguimiento', 0.15),
-            ('Finalización y entrega', 0.10)
+            ('Planificación inicial', 0.15),
+            ('Fase de desarrollo', 0.50),
+            ('Control y seguimiento', 0.20),
+            ('Finalización y entrega', 0.15)
         ]
     }
 
@@ -3876,7 +3966,7 @@ def mostrar_aplicacion():
             # Vista previa del cronograma si está activado
             if st.session_state.incluir_cronograma and st.session_state.get('objeto') and st.session_state.get('plazo'):
                 if st.button("👁️ Vista Previa del Cronograma"):
-                    sector_detectado = detectar_sector_proyecto(
+                    sector_detectado = perfil_empresa.get('sector', 'general') if perfil_empresa else detectar_sector_proyecto(
                         st.session_state.get('objeto', ''),
                         st.session_state.get('texto_ppt', '')
                     )
@@ -4174,7 +4264,7 @@ def mostrar_aplicacion():
                     # Añadir cronograma si está habilitado
                     if st.session_state.get('incluir_cronograma', True):
                         try:
-                            sector_detectado = detectar_sector_proyecto(objeto, st.session_state.get('texto_ppt', ''))
+                            sector_detectado = datos_empresa.get('sector', 'general')  # Usar sector del perfil de empresa
                             fig, df_cronograma = generar_cronograma_proyecto(datos_proyecto, sector_detectado)
 
                             # Crear cronograma directamente en Word (más confiable)
