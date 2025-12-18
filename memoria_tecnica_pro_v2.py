@@ -2447,7 +2447,7 @@ def generar_memoria_por_criterios(datos_proyecto, criterios, texto_ppt, datos_em
 
         ESTILO DE REDACCIÓN Y FORMATO VISUAL:
         - Redacción profesional en párrafos bien estructurados (no demasiado largos)
-        - Lenguaje técnico especializado del sector {sector}
+        - Lenguaje profesional claro y accesible del sector {sector}
         - ORGANIZA el contenido en SUBAPARTADOS CLAROS con títulos descriptivos
         - USA PÁRRAFOS CORTOS (máximo 150-200 palabras) para facilitar la lectura
         - INCLUYE DATOS TÉCNICOS en formato tabular cuando sea apropiado
@@ -2455,7 +2455,7 @@ def generar_memoria_por_criterios(datos_proyecto, criterios, texto_ppt, datos_em
         - Incluye especificaciones técnicas detalladas con modelos, marcas y características específicas
 
         FORMATO ESTRUCTURADO REQUERIDO:
-        - Divide el criterio en 4-5 subapartados con títulos claros (Ej: "Metodología de trabajo", "Recursos técnicos", etc.)
+        - CREA subapartados ESPECÍFICOS Y ÚNICOS adaptados a lo que pide ESTE criterio concreto. NO uses subapartados genéricos. Analiza el nombre y descripción del criterio para determinar qué apartados son relevantes.
         - Cada subapartado debe tener 2-3 párrafos de 120-180 palabras
         - Usa negritas para resaltar términos técnicos clave (marca con **término**)
         - Intercala datos técnicos cuantitativos (números, porcentajes, especificaciones)
@@ -2548,10 +2548,10 @@ def generar_memoria_por_criterios(datos_proyecto, criterios, texto_ppt, datos_em
 
         REQUISITOS DE CALIDAD TÉCNICA:
         - Mínimo 3500-5000 palabras por criterio con contenido técnico sustancial
-        - Párrafos de 180-280 palabras con alta densidad técnica
+        - Párrafos de 150-250 palabras con lenguaje profesional pero accesible
         - Eliminación total de frases de relleno y generalidades
         - Datos técnicos verificables con referencias normativas específicas
-        - Lenguaje especializado del sector con precisión terminológica
+        - Lenguaje profesional del sector, técnico pero comprensible
 
         ⚠️ IMPORTANTE - EXTENSIÓN SIN LÍMITES:
         - NO te limites en la extensión. Genera TODO el contenido necesario
@@ -2569,25 +2569,25 @@ def generar_memoria_por_criterios(datos_proyecto, criterios, texto_ppt, datos_em
         - Menciona normativas, certificaciones y estándares aplicables
         - {'Resume los puntos clave sin perder profundidad técnica' if paginas_por_criterio <= 2 else 'NO resumas ni acortes el contenido - DESARROLLA TODO EN PROFUNDIDAD' if paginas_por_criterio > 5 else 'Equilibra profundidad técnica con claridad'}
 
-        EJEMPLO DE ESTRUCTURA (desarrolla CADA sección en profundidad):
+        IMPORTANTE - ESTRUCTURA ADAPTADA AL CRITERIO:
 
-        Análisis del criterio y enfoque metodológico:
-        [2-3 párrafos explicando el criterio, su importancia y cómo se abordará - 400-600 palabras MÍNIMO]
+        - NO sigas una estructura fija. ANALIZA el nombre del criterio y su descripción
+        - CREA 4-6 subapartados ESPECÍFICOS que respondan a lo que pide ESE criterio concreto
+        - Cada subapartado debe tener un título descriptivo relacionado con el criterio
+        - Por ejemplo, si el criterio es "Equipo de trabajo", los subapartados podrían ser:
+          "Organigrama del proyecto", "Perfiles profesionales", "Dedicación y disponibilidad", etc.
+        - Si el criterio es "Plan de calidad", los subapartados podrían ser:
+          "Sistema de gestión de calidad", "Indicadores de seguimiento", "Auditorías internas", etc.
+        - NUNCA uses subapartados genéricos como "Análisis del criterio" o "Metodología propuesta"
+        - Los subapartados deben ser RELEVANTES y ESPECÍFICOS para cada criterio
 
-        Metodología de trabajo propuesta:
-        [4-6 párrafos con metodología detallada, fases, procesos, protocolos - 800-1200 palabras MÍNIMO]
-
-        Recursos técnicos y humanos asignados:
-        [4-5 párrafos describiendo equipos, personal, software, instalaciones con especificaciones completas - 700-1000 palabras MÍNIMO]
-
-        Experiencia específica en proyectos similares:
-        [3-4 párrafos con ejemplos concretos, fechas, resultados cuantitativos, lecciones aprendidas - 600-800 palabras MÍNIMO]
-
-        Garantía de cumplimiento y medidas de calidad:
-        [3-4 párrafos sobre protocolos, controles, certificaciones, KPIs, auditorías - 500-700 palabras MÍNIMO]
-
-        Control de calidad y seguimiento:
-        [3-4 párrafos adicionales sobre sistemas de control, reporting, mejora continua - 500-700 palabras MÍNIMO]
+        ESTILO DE REDACCIÓN:
+        - Redacción profesional pero CLARA y ACCESIBLE
+        - Evita jerga excesivamente técnica que dificulte la lectura
+        - Usa un tono profesional pero no académico ni excesivamente formal
+        - Párrafos de longitud moderada (150-200 palabras máximo)
+        - Alterna explicaciones con datos concretos para mantener el interés
+        - El texto debe ser fácil de leer y entender por un evaluador no especialista
 
         TOTAL ESPERADO: Aproximadamente {palabras_por_criterio} palabras para este criterio
         """
@@ -4104,11 +4104,6 @@ def mostrar_aplicacion():
                     for i, criterio in enumerate(st.session_state.criterios_valoracion, 2):
                         criterio_nombre = criterio['nombre'].upper()
                         indice_items.append((f'{i}. {criterio_nombre}', pagina_actual))
-                        indice_items.append((f'   {i}.1. Análisis del criterio', pagina_actual))
-                        indice_items.append((f'   {i}.2. Metodología propuesta', pagina_actual + 1))
-                        indice_items.append((f'   {i}.3. Experiencia específica', pagina_actual + 2))
-                        indice_items.append((f'   {i}.4. Recursos asignados', pagina_actual + 3))
-                        indice_items.append((f'   {i}.5. Planificación y control', pagina_actual + 4))
                         pagina_actual += 6
 
                     # Añadir cronograma al índice si está habilitado
