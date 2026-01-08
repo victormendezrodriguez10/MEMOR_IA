@@ -2836,6 +2836,12 @@ def generar_memoria_por_criterios(datos_proyecto, criterios, texto_ppt, datos_em
 
         Genera una sección técnica especializada para el siguiente criterio de valoración.
 
+        🚨 REGLA FUNDAMENTAL - LEE ESTO PRIMERO:
+        - SOLO puedes usar información que aparezca EXPLÍCITAMENTE en el PPT adjunto
+        - NO INVENTES datos, requisitos o especificaciones que no estén en el PPT
+        - Si el PPT no menciona algo específico, NO lo incluyas
+        - Cada afirmación debe poder verificarse en el PPT
+
         ENFOQUE CRÍTICO - MÁXIMA PRIORIDAD:
         - RELACIONA DIRECTAMENTE cada punto desarrollado con el PLIEGO TÉCNICO (PPT) adjunto
         - IDENTIFICA requisitos específicos del PPT y RESPONDE técnicamente a cada uno
@@ -2851,11 +2857,18 @@ def generar_memoria_por_criterios(datos_proyecto, criterios, texto_ppt, datos_em
         - Todo el vocabulario técnico, ejemplos, herramientas, metodologías y referencias DEBEN ser específicos para {sector}
         - Si no estás seguro si algo es relevante para {sector}, NO lo incluyas
 
-        ESTILO DE REDACCIÓN Y FORMATO VISUAL:
+        📊 FORMATO VISUAL OBLIGATORIO - ROMPER LA DENSIDAD:
+        - INCLUYE AL MENOS 1 TABLA por cada subapartado importante
+        - USA LISTAS con viñetas para enumerar características, requisitos, etc.
+        - Alterna: párrafo corto → tabla → párrafo corto → lista
+        - NUNCA más de 2 párrafos seguidos sin un elemento visual (tabla o lista)
+        - Cada párrafo máximo 60-80 palabras (muy cortos)
+
+        ESTILO DE REDACCIÓN:
         - Redacción profesional en párrafos bien estructurados (no demasiado largos)
         - Lenguaje profesional claro y accesible del sector {sector}
         - ORGANIZA el contenido en SUBAPARTADOS CLAROS con títulos descriptivos
-        - USA PÁRRAFOS CORTOS (máximo 100-150 palabras) para facilitar la lectura
+        - USA PÁRRAFOS MUY CORTOS (máximo 60-80 palabras)
         - Alterna párrafos descriptivos con ejemplos concretos y datos específicos
         - Evita bloques de texto denso - usa transiciones claras entre ideas
         - INCLUYE DATOS TÉCNICOS en formato tabular cuando sea apropiado
@@ -2864,7 +2877,7 @@ def generar_memoria_por_criterios(datos_proyecto, criterios, texto_ppt, datos_em
 
         FORMATO ESTRUCTURADO REQUERIDO:
         - CREA subapartados ESPECÍFICOS Y ÚNICOS adaptados a lo que pide ESTE criterio concreto. NO uses subapartados genéricos. Analiza el nombre y descripción del criterio para determinar qué apartados son relevantes.
-        - Cada subapartado debe tener 3-4 párrafos de 80-120 palabras
+        - Cada subapartado: 2-3 párrafos cortos (50-70 palabras) + 1 tabla o lista
         - Prioriza la CLARIDAD sobre la densidad técnica - el texto debe ser fácil de leer
         - Usa frases cortas y directas, evitando oraciones subordinadas excesivas
         - Usa negritas para resaltar términos técnicos clave (marca con **término**)
@@ -4483,10 +4496,26 @@ def mostrar_aplicacion():
                     # Añadir numeración de páginas
                     agregar_numeracion_paginas(doc)
 
-                    # Usar el logo del perfil de empresa
-                    logo_a_usar = perfil_empresa.get('logo_path') if perfil_empresa else None
-                    if not logo_a_usar:
-                        logo_a_usar = st.session_state.get('logo_path')
+                    # Usar el logo del perfil de empresa con verificación robusta
+                    logo_a_usar = None
+                    # Intentar obtener logo del perfil
+                    if perfil_empresa and perfil_empresa.get('logo_path'):
+                        logo_candidato = perfil_empresa['logo_path']
+                        if os.path.exists(logo_candidato):
+                            logo_a_usar = logo_candidato
+                        else:
+                            print(f"DEBUG: Logo del perfil no encontrado en: {logo_candidato}")
+                    
+                    # Fallback a session_state
+                    if not logo_a_usar and st.session_state.get('logo_path'):
+                        logo_candidato = st.session_state['logo_path']
+                        if os.path.exists(logo_candidato):
+                            logo_a_usar = logo_candidato
+                    
+                    # Fallback a logo.png predeterminado
+                    if not logo_a_usar and os.path.exists('logo.png'):
+                        logo_a_usar = 'logo.png'
+                        print("DEBUG: Usando logo.png predeterminado")
 
                     print(f"DEBUG: Logo a usar: {logo_a_usar}")  # Debug
                     print(f"DEBUG: Datos empresa: {datos_empresa}")  # Debug
