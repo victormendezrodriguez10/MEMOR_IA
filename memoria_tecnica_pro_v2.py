@@ -1065,15 +1065,33 @@ def llamar_ia_mejorado(prompt, max_tokens=3000, temperature=0.3, auto_continuar=
     Si auto_continuar=True, detecta texto cortado y continúa generando hasta completar.
     """
     try:
-        # Construir system prompt dinámico según el sector
+        # Construir system prompt dinámico - VERSIÓN ESTRICTA v2
         if sector and sector != 'general':
-            system_prompt = f"""Eres un experto redactor de memorias técnicas profesionales para licitaciones del sector {sector}.
-IMPORTANTE: Genera contenido EXCLUSIVAMENTE relacionado con el sector {sector}.
-NO incluyas referencias a otros sectores como construcción, obra civil, edificación u otros que no correspondan al sector {sector}.
-Redacta siempre en párrafos largos y fluidos, sin usar listas, viñetas, asteriscos ni guiones.
-Todo el contenido técnico debe ser específico y relevante para {sector}."""
+            system_prompt = f"""Eres redactor de memorias técnicas para licitaciones del sector {sector}.
+
+REGLAS ABSOLUTAS - PROHIBICIONES:
+1. USA ÚNICAMENTE información del PPT/pliego - NO INVENTES NADA
+2. PROHIBIDO añadir: blockchain, machine learning, deep learning, TensorFlow, Apache Spark, Kubernetes, etc. (salvo que el PPT los mencione)
+3. PROHIBIDO inventar marcas, modelos, especificaciones técnicas o cifras no presentes en el PPT
+4. Si el PPT no menciona algo específico, NO lo incluyas - mejor breve y preciso que extenso e inventado
+5. Cada afirmación DEBE poder verificarse en el PPT
+
+SECTOR {sector}: IGNORA contenido de otros sectores completamente
+
+FORMATO VISUAL:
+- Párrafos cortos de 80-120 palabras máximo
+- Incluye tablas markdown con datos DEL PPT usando | Col1 | Col2 |
+- Alterna: párrafo corto -> tabla -> párrafo corto"""
         else:
-            system_prompt = "Eres un experto redactor de memorias técnicas profesionales para licitaciones. Redacta siempre en párrafos largos y fluidos, sin usar listas, viñetas, asteriscos ni guiones."
+            system_prompt = """Eres redactor de memorias técnicas para licitaciones.
+
+REGLAS ABSOLUTAS - PROHIBICIONES:
+1. USA ÚNICAMENTE información del PPT/pliego - NO INVENTES NADA
+2. PROHIBIDO inventar tecnologías, marcas, especificaciones o datos
+3. Si el PPT no menciona algo, NO lo incluyas
+4. Cada afirmación DEBE poder verificarse en el PPT
+
+FORMATO: Párrafos cortos (80-120 palabras), tablas markdown con datos DEL PPT"""
 
         # Debug: verificar configuración
         print(f"DEBUG IA: API Key configurada: {bool(ANTHROPIC_API_KEY)}")
@@ -2414,71 +2432,157 @@ def crear_cronograma_tabla_word(doc, df_cronograma, datos_proyecto, tipo_periodo
 def procesar_contenido_visual(doc, contenido):
     """
     Procesa el contenido generado por IA y lo formatea con estilo visual mejorado.
-    Detecta subapartados, aplica negritas, y estructura mejor el texto.
+    Detecta subapartados, tablas markdown, aplica negritas, y estructura mejor el texto.
     """
     try:
         # Dividir contenido en bloques
         bloques = contenido.split('\n\n')
 
-        for bloque in bloques:
-            bloque = bloque.strip()
+        i = 0
+        while i < len(bloques):
+            bloque = bloques[i].strip()
             if not bloque:
+                i += 1
                 continue
 
-            # Detectar si es un subapartado (líneas que terminan con : o son cortas y en mayúsculas)
-            es_subapartado = False
+            # Detectar si es una tabla markdown (contiene | al inicio de línea)
+            lineas = bloque.split('\n')
+            es_tabla = False
 
-            # Criterio 1: Termina con dos puntos
-            if bloque.endswith(':'):
-                es_subapartado = True
-                bloque = bloque[:-1]  # Quitar los dos puntos
+            if any(linea.strip().startswith('|') for linea in lineas):
+                # Verificar si es una tabla válida
+                lineas_tabla = [l.strip() for l in lineas if l.strip().startswith('|')]
+                if len(lineas_tabla) >= 2:
+                    es_tabla = True
 
-            # Criterio 2: Es corto (menos de 80 caracteres) y empieza con mayúscula
-            elif len(bloque) < 80 and bloque[0].isupper() and '\n' not in bloque:
-                # Verificar si no tiene punto al final (probablemente es un título)
-                if not bloque.endswith('.'):
-                    es_subapartado = True
-
-            # Criterio 3: Contiene números romanos o numeración (1., 2., I., II., etc.)
-            elif re.match(r'^[IVX]+\.|^\d+\.', bloque.strip()):
-                es_subapartado = True
-                # Remover numeración si existe
-                bloque = re.sub(r'^[IVX]+\.\s*|^\d+\.\s*', '', bloque)
-
-            if es_subapartado:
-                # Añadir como subapartado (heading nivel 2)
-                doc.add_heading(bloque.upper(), 2)
+            if es_tabla:
+                # Procesar tabla markdown
+                try:
+                    procesar_tabla_markdown(doc, bloque)
+                except Exception as e:
+                    print(f"Error procesando tabla: {e}")
+                    doc.add_paragraph(bloque)
             else:
-                # Es un párrafo normal
-                p = doc.add_paragraph()
+                # Detectar si es un subapartado
+                es_subapartado = False
 
-                # Procesar el bloque para detectar negritas marcadas con **texto**
-                # y aplicar formato
-                partes = re.split(r'\*\*(.*?)\*\*', bloque)
+                # Criterio 1: Termina con dos puntos
+                if bloque.endswith(':'):
+                    es_subapartado = True
+                    bloque = bloque[:-1]
 
-                for i, parte in enumerate(partes):
-                    if not parte:
-                        continue
+                # Criterio 2: Es corto y empieza con mayúscula
+                elif len(bloque) < 80 and bloque[0].isupper() and '\n' not in bloque:
+                    if not bloque.endswith('.'):
+                        es_subapartado = True
 
-                    if i % 2 == 0:
-                        # Texto normal
-                        p.add_run(parte)
-                    else:
-                        # Texto en negrita
-                        run = p.add_run(parte)
-                        run.bold = True
+                # Criterio 3: Contiene numeración
+                elif re.match(r'^[IVX]+\.|^\d+\.', bloque.strip()):
+                    es_subapartado = True
+                    bloque = re.sub(r'^[IVX]+\.\s*|^\d+\.\s*', '', bloque)
 
-                # Ajustar espaciado del párrafo para mejor lectura
-                p.paragraph_format.space_after = Pt(8)
-                p.paragraph_format.line_spacing = 1.15
+                if es_subapartado:
+                    doc.add_heading(bloque.upper(), 2)
+                else:
+                    p = doc.add_paragraph()
+                    partes = re.split(r'\*\*(.*?)\*\*', bloque)
+
+                    for j, parte in enumerate(partes):
+                        if not parte:
+                            continue
+                        if j % 2 == 0:
+                            p.add_run(parte)
+                        else:
+                            run = p.add_run(parte)
+                            run.bold = True
+
+                    p.paragraph_format.space_after = Pt(8)
+                    p.paragraph_format.line_spacing = 1.15
+
+            i += 1
 
     except Exception as e:
-        # Si hay error en el procesamiento, añadir contenido sin formato
         print(f"Error procesando contenido visual: {e}")
         for parrafo in contenido.split('\n\n'):
             if parrafo.strip():
                 doc.add_paragraph(parrafo)
 
+def procesar_tabla_markdown(doc, texto_tabla):
+    """
+    Convierte una tabla markdown a una tabla Word.
+    Formato esperado:
+    | Col1 | Col2 | Col3 |
+    |------|------|------|
+    | Val1 | Val2 | Val3 |
+    """
+    try:
+        lineas = [l.strip() for l in texto_tabla.split('\n') if l.strip().startswith('|')]
+
+        if len(lineas) < 2:
+            doc.add_paragraph(texto_tabla)
+            return
+
+        # Filtrar línea de separación (|---|---|)
+        lineas_datos = []
+        for linea in lineas:
+            # Verificar si es línea de separación
+            contenido = linea.replace('|', '').replace('-', '').replace(':', '').strip()
+            if contenido:  # No es solo separadores
+                lineas_datos.append(linea)
+
+        if len(lineas_datos) < 1:
+            doc.add_paragraph(texto_tabla)
+            return
+
+        # Parsear celdas
+        filas = []
+        for linea in lineas_datos:
+            celdas = [c.strip() for c in linea.split('|')[1:-1]]  # Quitar | inicial y final
+            if celdas:
+                filas.append(celdas)
+
+        if not filas:
+            doc.add_paragraph(texto_tabla)
+            return
+
+        # Determinar número de columnas
+        num_cols = max(len(fila) for fila in filas)
+        num_filas = len(filas)
+
+        # Crear tabla Word
+        tabla = doc.add_table(rows=num_filas, cols=num_cols)
+        tabla.style = 'Table Grid'
+
+        # Llenar tabla
+        for i, fila in enumerate(filas):
+            for j, celda in enumerate(fila):
+                if j < num_cols:
+                    cell = tabla.rows[i].cells[j]
+                    cell.text = celda
+
+                    # Formato para encabezado (primera fila)
+                    if i == 0:
+                        for paragraph in cell.paragraphs:
+                            for run in paragraph.runs:
+                                run.bold = True
+                            paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+                        # Color de fondo para encabezado
+                        shading = OxmlElement('w:shd')
+                        shading.set(qn('w:fill'), '1E3A8A')  # Azul oscuro
+                        cell._element.get_or_add_tcPr().append(shading)
+
+                        # Texto blanco para encabezado
+                        for paragraph in cell.paragraphs:
+                            for run in paragraph.runs:
+                                run.font.color.rgb = RGBColor(255, 255, 255)
+
+        # Espacio después de la tabla
+        doc.add_paragraph()
+
+    except Exception as e:
+        print(f"Error creando tabla Word: {e}")
+        doc.add_paragraph(texto_tabla)
 def agregar_numeracion_paginas(doc):
     """Añade numeración de páginas al documento"""
     try:
@@ -2933,64 +3037,40 @@ def generar_memoria_por_criterios(datos_proyecto, criterios, texto_ppt, datos_em
         CONTEXTO COMPLETO DEL PLIEGO TÉCNICO (Extenso - Máximo contexto):
         {texto_ppt[:500000] if texto_ppt else "No disponible"}...
 
-        ESPECIFICACIONES TÉCNICAS DETALLADAS REQUERIDAS:
+        INSTRUCCIONES CRÍTICAS - NO INVENTAR:
 
-        Para EQUIPAMIENTO Y RECURSOS TÉCNICOS:
-        - Marca, modelo y año de fabricación específicos (Ej: "Caterpillar CAT 320D modelo 2019")
-        - Especificaciones técnicas exactas: potencia (kW/CV), capacidad (toneladas), rendimiento (m³/h)
-        - Certificaciones CE, normativas ISO aplicables, homologaciones específicas
-        - Sistemas de control integrados (GPS, telemetría, sensores)
-        - Consumo energético, autonomía operativa, mantenimiento programado
+        ⛔ PROHIBIDO ABSOLUTAMENTE:
+        - Inventar marcas, modelos o especificaciones (ej: NO escribir "Caterpillar CAT 320D", "Dell PowerEdge", etc. salvo que estén en el PPT)
+        - Añadir tecnologías no mencionadas en el PPT (blockchain, machine learning, TensorFlow, Apache Spark, etc.)
+        - Inventar cifras, porcentajes o datos numéricos
+        - Mencionar software o hardware específico que no esté en el PPT
+        - Crear requisitos técnicos que no aparezcan en el pliego
 
-        Para SOFTWARE Y TECNOLOGÍA:
-        - Versiones específicas de software (Ej: "AutoCAD 2024, Módulo Civil 3D")
-        - Licencias profesionales, compatibilidad, integración con otros sistemas
-        - Capacidades de procesamiento, bases de datos, protocolos de seguridad
-        - Hardware asociado: servidores (Dell PowerEdge R740xd, 64GB RAM, Intel Xeon)
-        - Sistemas de backup, redundancia, conectividad 5G/fibra óptica
+        ✅ QUÉ DEBES HACER:
+        - Extraer información TEXTUAL del PPT proporcionado
+        - Citar secciones específicas del PPT (ej: "Según el punto 5.1 del pliego...")
+        - Si el PPT menciona requisitos, transcribirlos fielmente
+        - Usar los datos de la empresa proporcionados en el perfil
+        - Si no hay información específica sobre algo, NO lo menciones
 
-        Para INFRAESTRUCTURA Y INSTALACIONES:
-        - Ubicación física exacta, superficie (m²), distribución funcional
-        - Sistemas de climatización (Mitsubishi Electric VRF, 25kW)
-        - Conectividad: fibra óptica simétrica 1Gbps, redes redundantes
-        - Sistemas de seguridad: videovigilancia 4K, control accesos biométrico
-        - Certificaciones energéticas, sistemas UPS (APC Smart-UPS RT 10kVA)
+        FORMATO VISUAL OBLIGATORIO:
+        - Incluye tablas markdown con información REAL del PPT
+        - Formato: | Requisito del PPT | Cómo lo cumple la empresa |
+        - Alterna: párrafo corto (80-100 palabras) -> tabla -> párrafo corto
+        - NUNCA más de 2 párrafos seguidos sin una tabla o lista
 
-        Para METODOLOGÍAS Y PROCESOS:
-        - Protocolos específicos según normativa (UNE, ISO, AENOR)
-        - Procedimientos certificados, check-lists técnicos detallados
-        - Sistemas de trazabilidad: códigos QR, RFID, blockchain para verificación
-        - Indicadores KPI específicos con umbrales de aceptación numéricos
-        - Herramientas de medición calibradas (certificado de calibración vigente)
-
-        INTEGRACIÓN DE PERSONAL TÉCNICO EN CONTENIDO:
-        - Menciona nombres específicos del equipo cuando sea relevante técnicamente
-        - Relaciona titulaciones con competencias específicas del criterio
-        - Referencias a experiencia previa detallada en proyectos similares
-        - Certificaciones personales aplicables al criterio específico
-
-        REQUISITOS DE CALIDAD TÉCNICA:
-        - Mínimo 3500-5000 palabras por criterio con contenido técnico sustancial
-        - Párrafos de 150-250 palabras con lenguaje profesional pero accesible
-        - Eliminación total de frases de relleno y generalidades
-        - Datos técnicos verificables con referencias normativas específicas
-        - Lenguaje profesional del sector, técnico pero comprensible
-
-        ⚠️ IMPORTANTE - EXTENSIÓN SIN LÍMITES:
-        - NO te limites en la extensión. Genera TODO el contenido necesario
-        - Desarrolla COMPLETAMENTE cada subapartado sin resumir
-        - Si necesitas más espacio, continúa escribiendo sin restricciones
-        - El criterio debe ser EXHAUSTIVO y COMPLETO, no un resumen
-        - Prefiere ser EXTENSO y DETALLADO que conciso
-
-        DESARROLLO PROFUNDO Y COMPLETO:
-        - Desarrolla el criterio en aproximadamente {paginas_por_criterio} páginas ({palabras_por_criterio} palabras aprox.)
-        - {'Sé CONCISO pero COMPLETO' if paginas_por_criterio <= 2 else 'Desarrolla con DETALLE y PROFUNDIDAD' if paginas_por_criterio <= 5 else 'Desarrolla EXHAUSTIVAMENTE con MÁXIMO DETALLE'}
-        - Relaciona DIRECTAMENTE cada aspecto con el pliego técnico adjunto
-        - Justifica con ejemplos concretos de la experiencia de la empresa
-        - Incluye datos cuantitativos, KPIs, métricas y especificaciones técnicas
-        - Menciona normativas, certificaciones y estándares aplicables
-        - {'Resume los puntos clave sin perder profundidad técnica' if paginas_por_criterio <= 2 else 'NO resumas ni acortes el contenido - DESARROLLA TODO EN PROFUNDIDAD' if paginas_por_criterio > 5 else 'Equilibra profundidad técnica con claridad'}
+        EXTENSIÓN APROPIADA:
+        - Genera contenido PROPORCIONAL a la información disponible en el PPT
+        - Si el PPT tiene poca información sobre un criterio, genera contenido breve
+        - Es mejor ser conciso y preciso que extenso e inventado
+        - Prioriza CALIDAD sobre CANTIDAD
+        DESARROLLO DEL CONTENIDO:
+        - Genera contenido SOLO con información verificable del PPT y del perfil de empresa
+        - La extensión debe ser PROPORCIONAL a la información disponible (NO inventes para rellenar)
+        - Relaciona DIRECTAMENTE cada punto con requisitos específicos del pliego
+        - Incluye datos de la empresa: experiencia, certificaciones, equipo técnico
+        - Usa TABLAS para presentar información estructurada del PPT
+        - RECUERDA: Es mejor un documento breve y preciso que uno largo con contenido inventado
 
         IMPORTANTE - ESTRUCTURA ADAPTADA AL CRITERIO:
 
@@ -3022,16 +3102,12 @@ def generar_memoria_por_criterios(datos_proyecto, criterios, texto_ppt, datos_em
         print(f"DEBUG: Generando criterio '{nombre_criterio}' con {tokens_por_criterio} tokens, auto_continuar={auto_cont}")
         respuesta = llamar_ia_mejorado(prompt, max_tokens=tokens_por_criterio, temperature=0.3, auto_continuar=auto_cont, sector=sector)
         
-        # Limpieza adicional para eliminar cualquier símbolo no deseado
+        # Limpieza mínima - PRESERVAR TABLAS Y FORMATO MARKDOWN
         if respuesta:
-            respuesta = respuesta.replace('*', '')
-            respuesta = respuesta.replace('#', '')
-            respuesta = respuesta.replace('•', '')
-            respuesta = respuesta.replace('→', '')
-            # Eliminar listas numeradas
-            respuesta = re.sub(r'^\d+\.?\s+', '', respuesta, flags=re.MULTILINE)
-            # Eliminar guiones al inicio de línea
-            respuesta = re.sub(r'^-\s+', '', respuesta, flags=re.MULTILINE)
+            # Solo eliminar emojis decorativos, preservar | para tablas y * para negritas
+            import re as re_clean
+            respuesta = re_clean.sub(r'[🎯📊⚠️🚨💡✅❌🔹🔸📈📉🏆🌟⭐🔴🟢🟡]', '', respuesta)
+            # Preservar tablas markdown (|), negritas (*), y listas (-)
             
         secciones_criterios[nombre_criterio] = respuesta
     
