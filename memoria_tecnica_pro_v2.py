@@ -1059,12 +1059,22 @@ def mostrar_login():
 
 # ============ FUNCIONES MEJORADAS DE GENERACIÓN ============
 
-def llamar_ia_mejorado(prompt, max_tokens=3000, temperature=0.3, auto_continuar=True):
+def llamar_ia_mejorado(prompt, max_tokens=3000, temperature=0.3, auto_continuar=True, sector=None):
     """
     Versión mejorada usando Anthropic Claude con generación continua sin límites.
     Si auto_continuar=True, detecta texto cortado y continúa generando hasta completar.
     """
     try:
+        # Construir system prompt dinámico según el sector
+        if sector and sector != 'general':
+            system_prompt = f"""Eres un experto redactor de memorias técnicas profesionales para licitaciones del sector {sector}.
+IMPORTANTE: Genera contenido EXCLUSIVAMENTE relacionado con el sector {sector}.
+NO incluyas referencias a otros sectores como construcción, obra civil, edificación u otros que no correspondan al sector {sector}.
+Redacta siempre en párrafos largos y fluidos, sin usar listas, viñetas, asteriscos ni guiones.
+Todo el contenido técnico debe ser específico y relevante para {sector}."""
+        else:
+            system_prompt = "Eres un experto redactor de memorias técnicas profesionales para licitaciones. Redacta siempre en párrafos largos y fluidos, sin usar listas, viñetas, asteriscos ni guiones."
+
         # Debug: verificar configuración
         print(f"DEBUG IA: API Key configurada: {bool(ANTHROPIC_API_KEY)}")
         print(f"DEBUG IA: Modelo: {MODELO_IA}")
@@ -1100,7 +1110,7 @@ def llamar_ia_mejorado(prompt, max_tokens=3000, temperature=0.3, auto_continuar=
                     model=modelo_a_usar,
                     max_tokens=max_tokens,
                     temperature=temperature,
-                    system="Eres un experto redactor de memorias técnicas profesionales para licitaciones. Redacta siempre en párrafos largos y fluidos, sin usar listas, viñetas, asteriscos ni guiones.",
+                    system=system_prompt,
                     messages=[
                         {"role": "user", "content": parte}
                     ]
@@ -1119,7 +1129,7 @@ def llamar_ia_mejorado(prompt, max_tokens=3000, temperature=0.3, auto_continuar=
                 model=modelo_a_usar,
                 max_tokens=max_tokens,
                 temperature=temperature,
-                system="Eres un experto redactor de memorias técnicas profesionales para licitaciones. Redacta siempre en párrafos largos y fluidos, sin usar listas, viñetas, asteriscos ni guiones.",
+                system=system_prompt,
                 messages=[
                     {"role": "user", "content": prompt}
                 ]
@@ -1143,7 +1153,7 @@ def llamar_ia_mejorado(prompt, max_tokens=3000, temperature=0.3, auto_continuar=
             if auto_continuar:
                 respuesta_completa = respuesta_inicial
                 intentos_continuacion = 0
-                max_continuaciones = 5  # Máximo 5 continuaciones para evitar loops infinitos
+                max_continuaciones = 8  # Máximo 8 continuaciones para evitar loops infinitos
 
                 # Detectar si el texto se cortó (no termina bien)
                 while intentos_continuacion < max_continuaciones:
@@ -1182,7 +1192,7 @@ INSTRUCCIONES:
                         model=modelo_a_usar,
                         max_tokens=max_tokens,
                         temperature=temperature,
-                        system="Eres un experto redactor de memorias técnicas profesionales. Continúa el texto técnico de forma natural y fluida.",
+                        system=system_prompt,
                         messages=[
                             {"role": "user", "content": prompt_continuacion}
                         ]
@@ -2535,18 +2545,30 @@ def generar_memoria_por_criterios(datos_proyecto, criterios, texto_ppt, datos_em
         - CITA referencias específicas del PPT cuando sea relevante (páginas, secciones, tablas)
         - El criterio debe ser la RESPUESTA TÉCNICA al PPT, no contenido genérico
 
+        ⚠️ RESTRICCIÓN CRÍTICA DE SECTOR - MUY IMPORTANTE:
+        - Este proyecto es del sector: {sector}
+        - Genera contenido EXCLUSIVAMENTE relacionado con el sector {sector}
+        - NO incluyas NUNCA referencias a construcción, obra civil, edificación, hormigón, encofrados, cimentaciones u otros términos de sectores que NO correspondan a {sector}
+        - Si el PPT contiene información de otros sectores, IGNÓRALA completamente
+        - Todo el vocabulario técnico, ejemplos, herramientas, metodologías y referencias DEBEN ser específicos para {sector}
+        - Si no estás seguro si algo es relevante para {sector}, NO lo incluyas
+
         ESTILO DE REDACCIÓN Y FORMATO VISUAL:
         - Redacción profesional en párrafos bien estructurados (no demasiado largos)
         - Lenguaje profesional claro y accesible del sector {sector}
         - ORGANIZA el contenido en SUBAPARTADOS CLAROS con títulos descriptivos
-        - USA PÁRRAFOS CORTOS (máximo 150-200 palabras) para facilitar la lectura
+        - USA PÁRRAFOS CORTOS (máximo 100-150 palabras) para facilitar la lectura
+        - Alterna párrafos descriptivos con ejemplos concretos y datos específicos
+        - Evita bloques de texto denso - usa transiciones claras entre ideas
         - INCLUYE DATOS TÉCNICOS en formato tabular cuando sea apropiado
         - Evita frases de relleno como "Para garantizar el éxito", "La experiencia nos ha enseñado"
         - Incluye especificaciones técnicas detalladas con modelos, marcas y características específicas
 
         FORMATO ESTRUCTURADO REQUERIDO:
         - CREA subapartados ESPECÍFICOS Y ÚNICOS adaptados a lo que pide ESTE criterio concreto. NO uses subapartados genéricos. Analiza el nombre y descripción del criterio para determinar qué apartados son relevantes.
-        - Cada subapartado debe tener 2-3 párrafos de 120-180 palabras
+        - Cada subapartado debe tener 3-4 párrafos de 80-120 palabras
+        - Prioriza la CLARIDAD sobre la densidad técnica - el texto debe ser fácil de leer
+        - Usa frases cortas y directas, evitando oraciones subordinadas excesivas
         - Usa negritas para resaltar términos técnicos clave (marca con **término**)
         - Intercala datos técnicos cuantitativos (números, porcentajes, especificaciones)
 
@@ -2687,7 +2709,7 @@ def generar_memoria_por_criterios(datos_proyecto, criterios, texto_ppt, datos_em
         # Para memorias largas, mantener auto-continuación activada
         auto_cont = True  # Siempre activo para evitar textos cortados
         print(f"DEBUG: Generando criterio '{nombre_criterio}' con {tokens_por_criterio} tokens, auto_continuar={auto_cont}")
-        respuesta = llamar_ia_mejorado(prompt, max_tokens=tokens_por_criterio, temperature=0.3, auto_continuar=auto_cont)
+        respuesta = llamar_ia_mejorado(prompt, max_tokens=tokens_por_criterio, temperature=0.3, auto_continuar=auto_cont, sector=sector)
         
         # Limpieza adicional para eliminar cualquier símbolo no deseado
         if respuesta:
