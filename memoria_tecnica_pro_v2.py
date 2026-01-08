@@ -1768,6 +1768,304 @@ def generar_cronograma_proyecto(datos_proyecto, sector='general'):
 
     return fig, df
 
+
+# ============ FUNCIONES DE VISUALIZACIÓN PARA MEMORIAS ============
+
+def generar_organigrama_equipo(equipo_tecnico, titulo_proyecto="Proyecto"):
+    """Genera un organigrama visual del equipo de trabajo"""
+    import plotly.graph_objects as go
+
+    if not equipo_tecnico:
+        return None, None
+
+    # Crear estructura jerárquica
+    labels = ["Director de Proyecto"]
+    parents = [""]
+    colors = ["#2E86AB"]
+
+    # Añadir miembros del equipo
+    for i, miembro in enumerate(equipo_tecnico[:8]):  # Máximo 8 miembros
+        nombre = miembro.get('nombre', f'Técnico {i+1}')
+        cargo = miembro.get('cargo', 'Técnico')
+        labels.append(f"{cargo}\n{nombre}")
+        parents.append("Director de Proyecto")
+        colors.append("#A23B72" if i % 2 == 0 else "#F18F01")
+
+    fig = go.Figure(go.Treemap(
+        labels=labels,
+        parents=parents,
+        marker=dict(colors=colors),
+        textinfo="label",
+        textfont=dict(size=12, family="Arial"),
+        hovertemplate="<b>%{label}</b><extra></extra>"
+    ))
+
+    fig.update_layout(
+        title=dict(
+            text=f"Organigrama del Equipo - {titulo_proyecto}",
+            font=dict(size=16, family="Arial Black")
+        ),
+        margin=dict(t=50, l=10, r=10, b=10),
+        height=400
+    )
+
+    return fig, "organigrama"
+
+
+def generar_diagrama_fases(fases_metodologia, sector="general"):
+    """Genera un diagrama de fases/flujo del proceso metodológico"""
+    import plotly.graph_objects as go
+
+    # Fases predeterminadas por sector
+    fases_por_sector = {
+        'Estudio de Datos': [
+            ('Recopilación', 15),
+            ('Limpieza', 15),
+            ('Análisis Exploratorio', 20),
+            ('Modelado', 25),
+            ('Validación', 15),
+            ('Presentación', 10)
+        ],
+        'Desarrollo de Software': [
+            ('Análisis', 15),
+            ('Diseño', 15),
+            ('Desarrollo', 35),
+            ('Testing', 20),
+            ('Despliegue', 10),
+            ('Mantenimiento', 5)
+        ],
+        'Consultoría de Software': [
+            ('Diagnóstico', 20),
+            ('Análisis', 20),
+            ('Propuesta', 20),
+            ('Implementación', 25),
+            ('Seguimiento', 15)
+        ],
+        'Ciberseguridad': [
+            ('Auditoría Inicial', 15),
+            ('Análisis Vulnerabilidades', 25),
+            ('Plan de Acción', 15),
+            ('Implementación', 25),
+            ('Monitorización', 20)
+        ],
+        'general': [
+            ('Planificación', 15),
+            ('Análisis', 20),
+            ('Ejecución', 40),
+            ('Control', 15),
+            ('Cierre', 10)
+        ]
+    }
+
+    fases = fases_metodologia if fases_metodologia else fases_por_sector.get(sector, fases_por_sector['general'])
+
+    nombres = [f[0] for f in fases]
+    porcentajes = [f[1] for f in fases]
+
+    # Colores profesionales
+    colores = ['#2E86AB', '#A23B72', '#F18F01', '#C73E1D', '#3B1F2B', '#95190C']
+
+    fig = go.Figure(go.Funnel(
+        y=nombres,
+        x=porcentajes,
+        textinfo="value+percent initial",
+        texttemplate="%{y}<br>%{x}%",
+        marker=dict(color=colores[:len(nombres)]),
+        connector=dict(line=dict(color="royalblue", dash="dot", width=2))
+    ))
+
+    fig.update_layout(
+        title=dict(
+            text=f"Fases de la Metodología - {sector}",
+            font=dict(size=16, family="Arial Black")
+        ),
+        margin=dict(t=60, l=10, r=10, b=10),
+        height=400,
+        showlegend=False
+    )
+
+    return fig, "fases"
+
+
+def generar_grafico_capacidades(datos_empresa, sector="general"):
+    """Genera un gráfico de barras con las capacidades de la empresa"""
+    import plotly.graph_objects as go
+
+    # Categorías de capacidades según sector
+    capacidades_por_sector = {
+        'Estudio de Datos': {
+            'categorias': ['Python/R', 'Machine Learning', 'Visualización', 'Big Data', 'SQL/NoSQL', 'Cloud'],
+            'valores': [95, 88, 92, 85, 90, 82]
+        },
+        'Desarrollo de Software': {
+            'categorias': ['Backend', 'Frontend', 'DevOps', 'Testing', 'Arquitectura', 'Documentación'],
+            'valores': [92, 88, 85, 90, 87, 80]
+        },
+        'Ciberseguridad': {
+            'categorias': ['Auditoría', 'Pentesting', 'SIEM', 'Forense', 'Normativa', 'Respuesta'],
+            'valores': [90, 88, 85, 82, 95, 87]
+        },
+        'general': {
+            'categorias': ['Experiencia', 'Recursos', 'Calidad', 'Plazos', 'Innovación', 'Servicio'],
+            'valores': [90, 85, 92, 88, 80, 95]
+        }
+    }
+
+    caps = capacidades_por_sector.get(sector, capacidades_por_sector['general'])
+
+    # Ajustar valores según datos de empresa
+    experiencia = datos_empresa.get('experiencia', 10)
+    factor = min(1.0, experiencia / 15)  # Factor basado en años de experiencia
+    valores_ajustados = [min(100, int(v * (0.8 + factor * 0.2))) for v in caps['valores']]
+
+    fig = go.Figure()
+
+    fig.add_trace(go.Bar(
+        x=caps['categorias'],
+        y=valores_ajustados,
+        marker_color=['#2E86AB', '#A23B72', '#F18F01', '#C73E1D', '#3B1F2B', '#28A745'],
+        text=[f"{v}%" for v in valores_ajustados],
+        textposition='outside',
+        textfont=dict(size=12, family="Arial Black")
+    ))
+
+    fig.update_layout(
+        title=dict(
+            text=f"Capacidades Técnicas - {sector}",
+            font=dict(size=16, family="Arial Black")
+        ),
+        xaxis_title="Área",
+        yaxis_title="Nivel (%)",
+        yaxis=dict(range=[0, 110]),
+        margin=dict(t=60, l=60, r=20, b=60),
+        height=350,
+        showlegend=False
+    )
+
+    return fig, "capacidades"
+
+
+def generar_grafico_recursos(datos_empresa):
+    """Genera un gráfico circular de distribución de recursos"""
+    import plotly.graph_objects as go
+
+    empleados = datos_empresa.get('empleados', '10-50')
+
+    # Distribución típica de recursos
+    labels = ['Personal Técnico', 'Gestión Proyecto', 'Calidad', 'Soporte', 'I+D']
+    values = [45, 20, 15, 12, 8]
+    colors = ['#2E86AB', '#A23B72', '#F18F01', '#28A745', '#6C757D']
+
+    fig = go.Figure(data=[go.Pie(
+        labels=labels,
+        values=values,
+        hole=0.4,
+        marker=dict(colors=colors),
+        textinfo='label+percent',
+        textfont=dict(size=11),
+        hovertemplate="<b>%{label}</b><br>%{percent}<extra></extra>"
+    )])
+
+    fig.update_layout(
+        title=dict(
+            text="Distribución de Recursos del Proyecto",
+            font=dict(size=16, family="Arial Black")
+        ),
+        margin=dict(t=60, l=20, r=20, b=20),
+        height=350,
+        showlegend=True,
+        legend=dict(orientation="h", yanchor="bottom", y=-0.2)
+    )
+
+    return fig, "recursos"
+
+
+def seleccionar_visual_por_criterio(nombre_criterio, datos_empresa, sector):
+    """Selecciona el tipo de visual más apropiado según el criterio"""
+    criterio_lower = nombre_criterio.lower()
+
+    if any(word in criterio_lower for word in ['equipo', 'personal', 'técnico', 'humano', 'organización']):
+        return generar_organigrama_equipo(
+            datos_empresa.get('equipo_tecnico', []),
+            datos_empresa.get('razon_social', 'Proyecto')
+        )
+
+    elif any(word in criterio_lower for word in ['metodolog', 'proceso', 'procedimiento', 'fases', 'plan']):
+        return generar_diagrama_fases(None, sector)
+
+    elif any(word in criterio_lower for word in ['experiencia', 'capacidad', 'solvencia', 'competencia']):
+        return generar_grafico_capacidades(datos_empresa, sector)
+
+    elif any(word in criterio_lower for word in ['recursos', 'medios', 'material', 'infraestructura']):
+        return generar_grafico_recursos(datos_empresa)
+
+    else:
+        # Por defecto, gráfico de capacidades
+        return generar_grafico_capacidades(datos_empresa, sector)
+
+
+def insertar_grafico_en_word(doc, fig, titulo="Gráfico"):
+    """Inserta un gráfico de Plotly en un documento Word"""
+    import io
+
+    if fig is None:
+        return False
+
+    try:
+        # Exportar gráfico a imagen
+        img_bytes = fig.to_image(format="png", width=800, height=400, scale=2)
+
+        # Crear stream de imagen
+        img_stream = io.BytesIO(img_bytes)
+
+        # Añadir párrafo con el gráfico
+        paragraph = doc.add_paragraph()
+        paragraph.alignment = 1  # Centrado
+        run = paragraph.add_run()
+        run.add_picture(img_stream, width=Inches(6))
+
+        # Añadir título debajo
+        caption = doc.add_paragraph(f"Figura: {titulo}")
+        caption.alignment = 1
+        caption.runs[0].italic = True
+        caption.runs[0].font.size = Pt(10)
+
+        return True
+    except Exception as e:
+        print(f"Error insertando gráfico: {e}")
+        return False
+    """Inserta un gráfico de Plotly en un documento Word"""
+    import io
+    from docx.shared import Inches
+
+    if fig is None:
+        return False
+
+    try:
+        # Exportar gráfico a imagen
+        img_bytes = fig.to_image(format="png", width=800, height=400, scale=2)
+
+        # Crear stream de imagen
+        img_stream = io.BytesIO(img_bytes)
+
+        # Añadir párrafo con el gráfico
+        paragraph = doc.add_paragraph()
+        paragraph.alignment = 1  # Centrado
+        run = paragraph.add_run()
+        run.add_picture(img_stream, width=Inches(6))
+
+        # Añadir título debajo
+        caption = doc.add_paragraph(f"Figura: {titulo}")
+        caption.alignment = 1
+        caption.runs[0].italic = True
+        caption.runs[0].font.size = Pt(10)
+
+        return True
+    except Exception as e:
+        print(f"Error insertando gráfico: {e}")
+        return False
+
+
 def crear_portada_profesional(doc, datos_proyecto, datos_empresa, logo_path=None):
     """Crea una portada profesional con diseño atractivo"""
     try:
@@ -4279,7 +4577,21 @@ def mostrar_aplicacion():
                             contenido = secciones_criterios[criterio['nombre']]
                             if contenido:
                                 # Procesar contenido con formato mejorado
+
                                 procesar_contenido_visual(doc, contenido)
+
+                                # Insertar gráfico visual según el tipo de criterio
+                                try:
+                                    fig_criterio, tipo_grafico = seleccionar_visual_por_criterio(
+                                        criterio['nombre'],
+                                        datos_empresa,
+                                        datos_empresa.get('sector', 'general')
+                                    )
+                                    if fig_criterio:
+                                        doc.add_paragraph()  # Espacio antes del grafico
+                                        insertar_grafico_en_word(doc, fig_criterio, f"{criterio['nombre']}")
+                                except Exception as e:
+                                    print(f"No se pudo generar visual para {criterio['nombre']}: {e}")
 
                         doc.add_page_break()
 
